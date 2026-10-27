@@ -50,6 +50,8 @@ Agent 客户端 + 规则／Hook
 - 显式映射项目根目录；未匹配或有歧义时不猜测项目。
 - 精确删除指定段落；服务状态中不保留第二份笔记历史。
 - 可选 MCP SDK 适配器，暴露六个工具。
+- 已在隔离合成库完成模型级交叉验证：Codex 通过 MCP 审阅差异并修订，新的 OpenCode
+  会话读取到修订内容；证据与边界见[验证记录](docs/VALIDATION.md)。
 - `shared-memory init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
   目标目录非空时拒绝覆盖。
 
@@ -57,8 +59,7 @@ Agent 客户端 + 规则／Hook
 
 - 自动事实提取、事实核验、密钥扫描、用户审批、向量检索、图推理、后台索引，
   或完整对话采集。
-- 保证所有客户端生命周期 Hook 生效，或 Codex、Claude Code、OpenCode、
-  WorkBuddy 的模型级集成测试。
+- 保证自动启动读取、项目切换和压缩恢复；Claude Code 与 WorkBuddy 的模型会话仍未测试。
 - 与任意外部编辑器协作的事务协议、多用户安全隔离、原生 Windows 支持、自动上下文
   发现或完整备份管理。
 - 持久化幂等回执：重复应用已完成的修改会收到版本冲突；写入结果不确定时，
@@ -71,8 +72,8 @@ Agent 客户端 + 规则／Hook
 
 ### P0：验证真实客户端工作流
 
-- 使用隔离上下文库，在两个真实 Agent 客户端验证启动上下文、项目切换、修订旧上下文、
-  旧版本冲突处理，以及上下文压缩后的恢复。
+- 在已完成的 Codex → OpenCode 模型会话修订与读取测试基础上，继续验证未提示时的
+  启动读取、项目切换、模型处理旧版本冲突，以及上下文压缩后的恢复。
 - 逐个验证客户端的 MCP 配置与生命周期 Hook 后，再编写对应接入说明。
 - 验收标准：跨客户端读取与修订有效；明确记录不支持的 Hook 和模型级限制；不使用
   生产笔记库做测试。
@@ -124,8 +125,10 @@ python3 -m venv .venv
 .venv/bin/shared-memory init --project-root /absolute/path/to/your/project
 ```
 
-将 `init` 打印的 `mcp_config` 对象复制到你所用 Agent 的 MCP 配置中，重启客户端，
-并让它对当前仓库调用 `bootstrap`。下面的命令只验证项目代码，不代表 Agent 应用已经接好。
+OpenCode V2 使用 `init` 输出的 `opencode_v2_config` 合并到 `opencode.json(c)`；
+Codex 可执行输出的 `codex_mcp_add` 命令；其他支持 `mcpServers` 的客户端使用
+`mcp_config`。重启客户端后，让它针对目标项目调用 `bootstrap`。下面的命令只验证
+项目代码，不代表 Agent 应用已经接好。
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
@@ -137,16 +140,19 @@ python3 -m venv .venv
 
 初始化默认在 `~/.shared-memory-gateway/` 创建私有上下文工作区，并打印配置路径和
 MCP 服务命令。可用 `--directory` 指定位置；目标路径已存在时会拒绝使用。检查生成的
-个人／项目上下文模板后，将输出中的 `mcp_config` JSON 复制到 Agent 的 MCP 设置
-（按客户端要求调整外层字段）。初始化器不会改写客户端设置。也可以在 Python 中
+个人／项目上下文模板后，选择对应客户端的配置。OpenCode V2 使用 `mcp.servers`，
+仅修改 `mcpServers` 外层名称并不够：它还要求 `type: local` 和命令数组。
+初始化器不会改写客户端设置。也可以在 Python 中
 调用 `shared_memory_gateway.cli.initialize(...)` 获取结构化配置。
-使用通用 `mcpServers` 配置结构的客户端可直接粘贴生成的条目。Agent 应用及运行时
+使用通用 `mcpServers` 配置结构的客户端可合并生成的条目。Agent 应用及运行时
 依赖仍需单独安装。
 
-在不同机器间迁移上下文时，迁移 Markdown 文件即可；`memory.local.json` 与
-`.state/` 是本机配置／状态，应忽略或在目标机器重新生成。项目根路径因机器而异，
-在目标机器运行 `init --project-root` 注册当地的 checkout。省略该选项可创建不绑定
-具体项目路径的可迁移个人上下文工作区。POSIX 初始化器会为工作区和上下文文件设置
+创建不绑定具体项目路径的可迁移个人上下文工作区时，可省略 `--project-root`。
+在不同机器间迁移时，先在目标机器用当地 checkout 路径初始化一个新的工作区，然后将
+Markdown 上下文复制到新工作区的 `context/`；或者修改本机配置中的绝对项目根路径。
+`memory.local.json` 与 `.state/` 是本机配置／状态，应忽略或在目标机器重新生成。
+`init` 遇到已存在的目标路径会拒绝使用，迁移时不会覆盖既有上下文。项目根路径因机器而异，
+在目标机器运行 `init --project-root` 注册当地 checkout。POSIX 初始化器会为工作区和上下文文件设置
 仅当前用户可访问的权限；请将工作区放在你自己的备份范围内。`--project-root` 应指向
 要加载项目上下文的目标项目，而不是本 Gateway 仓库；仅创建个人上下文时可省略。
 
@@ -192,24 +198,49 @@ memory.apply_update(proposal) # 仅在调用方政策允许时应用
 
 ## MCP 接入
 
-`init` 会输出 `mcp_config` JSON，内含当前 Python 环境和配置文件的绝对路径。接受
-常见 `mcpServers` 格式的客户端可以直接粘贴，例如：
+`init` 输出 `opencode_v2_config`、`codex_mcp_add` 和 `mcp_config`，都包含当前
+Python 环境和配置文件的绝对路径。OpenCode V2 可将以下结构合并到项目或全局的
+`opencode.json(c)`：
 
 ```json
 {
-  "mcpServers": {
-    "shared-memory-gateway": {
-      "command": "/absolute/path/to/python",
-      "args": ["-m", "shared_memory_gateway.server", "--config", "/absolute/path/to/memory.local.json"]
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "shared-memory-gateway": {
+        "type": "local",
+        "command": ["/absolute/path/to/python", "-m", "shared_memory_gateway.server", "--config", "/absolute/path/to/memory.local.json"]
+      }
     }
   }
 }
 ```
 
+Codex 可以直接执行 `codex_mcp_add` 数组对应的命令，形式如下（路径以 `init` 输出为准）：
+
+```bash
+codex mcp add shared-memory-gateway -- /absolute/path/to/python -m shared_memory_gateway.server --config /absolute/path/to/memory.local.json
+```
+
+`mcp_config` 使用适用于部分客户端的 `mcpServers` 格式。
 该 Python 解释器属于安装此包的环境；移动或重建环境后需重新运行 `init` 或更新路径。
 各客户端的 MCP 配置格式仍可能不同。请添加建议的[客户端规则](docs/AGENT_RULES.md)，
 并验证模型实际调用工具；显示“已连接”不代表模型会及时读取上下文。初始化器不会安装
 Agent 应用或修改客户端配置。
+
+## 命名与同类项目
+
+“Gateway” 能描述目前的 CLI／MCP 访问边界，但也容易被理解为网络代理。更准确的
+定位是**本地共享上下文层**；仓库和包名暂时保留，以免打断已发布的安装与接入路径。
+候选名称有 *Shared Context*、*Context Ledger*；后者暗示具备持久历史，而当前原型
+尚未提供这一能力。
+
+[Basic Memory](https://github.com/basicmachines-co/basic-memory) 展示了文件优先的
+MCP 访问、项目管理与按客户端接入方式；它的索引、同步和知识图谱尚不属于本原型。
+[Mem0](https://github.com/mem0ai/mem0) 值得借鉴的是显式作用域与可复现评测，
+其模型驱动的提取、检索属于不同能力边界。[Letta](https://github.com/letta-ai/letta-code)
+聚焦带状态的 Agent 运行时，本项目不接管 Agent 生命周期。当前优先级是客户端易接入
+和基于来源的原位修订，并用合成跨客户端会话持续验证。
 
 | 工具 | 作用 |
 |---|---|

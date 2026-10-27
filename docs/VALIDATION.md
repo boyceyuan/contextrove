@@ -1,8 +1,9 @@
 # Validation and evidence boundaries
 
-Date: 2026-10-27. All local runs used disposable, synthetic vaults, not personal
-notes or real client configuration. Temporary vaults were cleaned up by their
-test context managers. No OpenCode/Codex/Claude Code/WorkBuddy settings were changed.
+Date: 2026-10-27. All local runs used synthetic context, not personal notes or
+production client configuration. Automated tests clean up their temporary vaults;
+model-session acceptance used a separate temporary workspace. No global
+OpenCode/Codex/Claude Code/WorkBuddy settings were changed.
 
 ## Core: 21 automated tests passed
 
@@ -34,9 +35,8 @@ The suite verifies:
 - A state directory inside the vault is rejected.
 - Workspace initialization creates separate personal/project context templates,
   portable relative vault paths, an explicit project mapping when requested,
-  owner-only POSIX permissions, and ready-to-copy MCP JSON using the active Python
-  environment. It refuses existing
-  targets without modifying them.
+  owner-only POSIX permissions, and client-specific MCP setup data using the active
+  Python environment. It refuses existing targets without modifying them.
 
 This does NOT prove safety in the remaining check-to-replace race against an
 arbitrary editor, malicious local filesystem changes, disk power loss, or every
@@ -69,6 +69,29 @@ The two SDK clients launched separate server processes sharing one config and
 state directory. This establishes protocol-level access and update visibility,
 not actual model behavior in any named agent client. Client lifecycle/compaction
 behavior, model factual accuracy and autonomous synthesis remain unverified.
+
+## Real client model sessions: cross-client correction passed
+
+On macOS, OpenCode V2 CLI 2.0.32 and Codex CLI 0.164.0 used separate model
+sessions and MCP processes against the same initialized synthetic workspace.
+The project-local OpenCode V2 `mcp.servers` configuration and Codex invocation
+overrides pointed to one machine-local config; no production vault or global MCP
+settings were modified.
+
+1. OpenCode model called `bootstrap` and `read` via MCP and identified the
+   synthetic marker `cobalt-otter-41` with `Status: pending.`
+2. Codex model called `bootstrap`, `read`, `propose_update`, inspected the exact
+   diff, then called `apply_update`; it replaced `Status: pending.` with
+   `Status: verified.` without changing the marker.
+3. A **fresh** OpenCode model session called MCP `read` and returned the marker
+   with `Status: verified.` (revision changed from `758b8596…` to `94c1dc66…`).
+
+The first Codex run was blocked by its MCP approval policy (`never`); a second
+isolated run with `--approve-for-me` succeeded. This is genuine model tool use,
+not a protocol-only simulation. The prompts explicitly requested tool use;
+autonomous startup retrieval, project switching, stale-write reconciliation by
+the model, compaction recovery, other clients and long-term reliability remain
+unverified. Approval behavior depends on the user's Codex policy.
 
 ## Optional Basic Memory compatibility probe
 

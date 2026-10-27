@@ -55,13 +55,15 @@ Agent clients + their rules / hooks
 - Explicit project-root mapping; unmatched/ambiguous projects are not guessed.
 - Exact passage deletion, without keeping a second note history in service state.
 - Optional MCP SDK adapter with six tools.
+- Synthetic model-session acceptance: Codex applied a reviewed correction through MCP;
+  a fresh OpenCode session read the corrected context (see [validation](docs/VALIDATION.md)).
 
 ## Not implemented
 
 - Automatic fact extraction, truth checking, secret scanning, user approvals,
   embeddings, graph reasoning, background indexing or full conversation capture.
-- Guaranteed lifecycle hooks across clients, or model-level integration tests
-  for Codex, Claude Code, OpenCode or WorkBuddy.
+- Guaranteed lifecycle hooks, autonomous startup retrieval, project-switching and
+  compaction recovery; Claude Code and WorkBuddy model sessions remain untested.
 - A transactional protocol with arbitrary external editors, a multi-user security
   boundary, native Windows support, automatic context discovery, or full backup management.
 - Durable idempotency receipts: replaying an applied proposal returns a revision
@@ -74,9 +76,9 @@ remain **planned** until implemented, tested, and reflected in the status above.
 
 ### P0 — Validate real client workflows
 
-- Test two real agent clients against a disposable context workspace: startup bootstrap,
-  project switching, correction of an existing note, stale-write handling, and
-  recovery after context compaction.
+- Extend the completed Codex → OpenCode model-session correction/read check with
+  startup retrieval without prompting, project switching, stale-write handling,
+  and recovery after context compaction.
 - Document per-client MCP setup and lifecycle hooks only after verifying them.
 - Acceptance: cross-client reads and corrections work; unsupported hooks and
   model-level limitations are explicitly documented; no production vault is used.
@@ -134,8 +136,10 @@ python3 -m venv .venv
 .venv/bin/shared-memory init --project-root /absolute/path/to/your/project
 ```
 
-Copy the `mcp_config` object printed by `init` into the chosen agent client's MCP
-settings. Restart that client and ask it to call `bootstrap` for the repository.
+Use the generated `opencode_v2_config` in an OpenCode V2 `opencode.json(c)`, or
+execute the generated `codex_mcp_add` command for Codex. Other clients may accept
+the generated `mcp_config` (`mcpServers`) object. Restart the client and ask it
+to call `bootstrap` for your project.
 The command below verifies the project code, not that an agent app has been configured.
 
 ```bash
@@ -148,18 +152,22 @@ Optional `uv` equivalent: `uv sync --extra mcp` and `uv run python scripts/verif
 Initialization creates a private `~/.shared-memory-gateway/` context workspace by
 default and prints its config path plus the MCP server command. Use `--directory`
 to choose another location. It refuses an existing target. Review the generated
-personal/project context templates, then copy the generated `mcp_config` JSON
-into your agent's MCP settings (adapt the outer key to the client's format).
+personal/project context templates, then use the generated configuration for your
+client. OpenCode V2 uses `mcp.servers`, not `mcpServers`; changing the outer key
+alone is insufficient because its local `command` is an array with `type: local`.
 The initializer does not edit client settings. Direct JSON output is also available
 from Python as `shared_memory_gateway.cli.initialize(...)`.
-For clients using the common `mcpServers` shape, the generated entry is ready to
-paste as-is. Agent apps and runtime dependencies still need to be installed
+For clients using the common `mcpServers` shape, the generated entry can be merged
+with existing MCP settings. Agent apps and runtime dependencies are installed
 separately.
 
 Create a portable workspace without machine-specific project mapping by omitting
-`--project-root`. To use project bootstrap on another machine, run `init` there
-with that machine's checkout path. The context Markdown can be copied or versioned
-independently; `memory.local.json` and `.state/` are machine-local and ignored.
+`--project-root`. To move it to another machine, initialize a fresh destination
+workspace with that machine's checkout path, then copy the context Markdown into
+its `context/` directory. Alternatively, update the absolute project root in the
+local config. The context Markdown can be copied or versioned independently;
+`memory.local.json` and `.state/` are machine-local and ignored. `init` refuses
+existing targets; it never overwrites context during migration.
 The initializer creates private directories/files on POSIX systems; store the
 workspace in a location covered by your own backups. `--project-root` must point
 to the project whose context you want to load, not this gateway's checkout. Omit
@@ -212,26 +220,54 @@ client attached to a config can read every note allowlisted by that config.
 
 ## MCP integration
 
-The initializer prints an `mcp_config` JSON object containing the active Python
-executable and absolute config path. Copy it into a client that accepts the common
-`mcpServers` shape. For example:
+The initializer prints `opencode_v2_config`, `codex_mcp_add`, and `mcp_config`,
+all using the active Python executable and absolute config path. For OpenCode V2,
+merge this shape into your project or global `opencode.json(c)`:
 
 ```json
 {
-  "mcpServers": {
-    "shared-memory-gateway": {
-      "command": "/absolute/path/to/python",
-      "args": ["-m", "shared_memory_gateway.server", "--config", "/absolute/path/to/memory.local.json"]
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "shared-memory-gateway": {
+        "type": "local",
+        "command": ["/absolute/path/to/python", "-m", "shared_memory_gateway.server", "--config", "/absolute/path/to/memory.local.json"]
+      }
     }
   }
 }
 ```
 
+For Codex, execute the `codex_mcp_add` array as a command, or use this shape
+with the paths printed by `init`:
+
+```bash
+codex mcp add shared-memory-gateway -- /absolute/path/to/python -m shared_memory_gateway.server --config /absolute/path/to/memory.local.json
+```
+
+The `mcp_config` output uses `mcpServers` for clients that support that shape.
 The generated interpreter belongs to the environment where the package was
 installed. If you move/recreate that environment, rerun `init` or update the
 command. Client-specific configuration formats differ; add the suggested
 [client rules](docs/AGENT_RULES.md) and verify actual tool use. The initializer
 does not install an agent client or edit its configuration.
+
+## Name and related projects
+
+“Gateway” describes the current CLI/MCP access boundary, but can suggest a
+network proxy. This project is better described as a **local shared context layer**;
+the published repository and package retain their current names while integration
+paths stabilize. Candidate future names include *Shared Context* and *Context Ledger*
+(the latter would imply a durable history this alpha does not yet provide).
+
+[Basic Memory](https://github.com/basicmachines-co/basic-memory) demonstrates
+file-first MCP access, project setup, and client-native onboarding; its indexing,
+sync and graph features are outside this alpha. [Mem0](https://github.com/mem0ai/mem0)
+shows the value of explicit memory scopes and reproducible evaluations, but its
+model-powered extraction and retrieval are a different boundary. [Letta](https://github.com/letta-ai/letta-code)
+focuses on stateful agent runtimes; this library does not own the agent lifecycle.
+The near-term design priority is reliable client setup and source-preserving
+corrections, measured against synthetic cross-client sessions.
 
 | Tool | Purpose |
 |---|---|

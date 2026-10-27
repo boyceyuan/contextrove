@@ -249,6 +249,11 @@ class MemoryTests(unittest.TestCase):
         self.assertTrue(Path(entry["command"]).exists())
         self.assertEqual(result["mcp_args"], entry["args"])
         self.assertEqual(result["config"], entry["args"][-1])
+        opencode = result["opencode_v2_config"]["mcp"]["servers"]["shared-memory-gateway"]
+        self.assertEqual("local", opencode["type"])
+        self.assertEqual([entry["command"], *entry["args"]], opencode["command"])
+        self.assertEqual(["codex", "mcp", "add", "shared-memory-gateway", "--", *opencode["command"]],
+                         result["codex_mcp_add"])
         self.assertEqual(0o700, workspace.stat().st_mode & 0o777)
         self.assertEqual(0o700, Path(result["vault"]).stat().st_mode & 0o777)
         self.assertEqual(0o600, Path(result["config"]).stat().st_mode & 0o777)

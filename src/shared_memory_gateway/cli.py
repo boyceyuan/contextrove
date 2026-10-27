@@ -88,6 +88,21 @@ def initialize(directory: str | Path, project_root: str | Path | None = None) ->
                 }
             }
         },
+        "opencode_v2_config": {
+            "$schema": "https://opencode.ai/config.json",
+            "mcp": {
+                "servers": {
+                    "shared-memory-gateway": {
+                        "type": "local",
+                        "command": [command_resolved, *server_args],
+                    }
+                }
+            },
+        },
+        "codex_mcp_add": [
+            "codex", "mcp", "add", "shared-memory-gateway", "--",
+            command_resolved, *server_args,
+        ],
     }
 
 
