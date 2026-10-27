@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from shared_memory_gateway.cli import initialize
 from shared_memory_gateway.core import Memory, MemoryError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +45,7 @@ class MemoryTests(unittest.TestCase):
     def child(self, method, args):
         env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
         return subprocess.Popen(
-            [sys.executable, "-m", "shared_memory_gateway.cli", "--config", str(self.config), method],
+            [sys.executable, "-m", "shared_memory_gateway.cli", method, "--config", str(self.config)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, env=env,
         )
@@ -224,6 +225,49 @@ class MemoryTests(unittest.TestCase):
         config["state_dir"] = "vault/state"
         self.config.write_text(json.dumps(config))
         self.assert_code("INVALID_CONFIG", lambda: Memory(self.config))
+
+    def test_init_creates_relocatable_context_workspace(self):
+        workspace = self.root / "portable-context"
+        project_root = self.root / "demo"
+        project_root.mkdir()
+        result = initialize(workspace, project_root)
+        config_path = Path(result["config"])
+        config = json.loads(config_path.read_text())
+        memory = Memory(config_path)
+        personal = memory.read("personal-context.md")
+        project = memory.read("projects/current-project.md")
+        self.assertIn("Stable preferences", personal["content"])
+        self.assertIn("Decisions and rationale", project["content"])
+        self.assertEqual("matched", memory.bootstrap(str(project_root / "src"))["status"])
+        self.assertEqual("unmatched", memory.bootstrap(str(self.root / "other"))["status"])
+        self.assertEqual(".state", config["state_dir"])
+        self.assertTrue((workspace / ".gitignore").exists())
+        self.assertTrue(Path(result["mcp_command"]).is_absolute())
+        entry = result["mcp_config"]["mcpServers"]["shared-memory-gateway"]
+        self.assertEqual(result["mcp_command"], entry["command"])
+        self.assertEqual(str(Path(sys.executable).absolute()), entry["command"])
+        self.assertTrue(Path(entry["command"]).exists())
+        self.assertEqual(result["mcp_args"], entry["args"])
+        self.assertEqual(result["config"], entry["args"][-1])
+        self.assertEqual(0o700, workspace.stat().st_mode & 0o777)
+        self.assertEqual(0o700, Path(result["vault"]).stat().st_mode & 0o777)
+        self.assertEqual(0o600, Path(result["config"]).stat().st_mode & 0o777)
+        self.assertEqual(0o600, (Path(result["vault"]) / "personal-context.md").stat().st_mode & 0o777)
+
+    def test_init_refuses_nonempty_target_without_modifying_it(self):
+        target = self.root / "existing"
+        target.mkdir()
+        marker = target / "keep.txt"
+        marker.write_text("user data")
+        self.assert_code("TARGET_EXISTS", lambda: initialize(target))
+        self.assertEqual("user data", marker.read_text())
+
+    def test_init_without_project_is_personal_context_only(self):
+        workspace = self.root / "personal-only"
+        result = initialize(workspace)
+        memory = Memory(result["config"])
+        self.assertEqual("unmatched", memory.bootstrap(str(self.root))["status"])
+        self.assertEqual([], memory.bootstrap(str(self.root))["entries"])
 
 
 if __name__ == "__main__":

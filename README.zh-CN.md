@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-**多个 Agent 共用一份 Markdown 知识，修订旧记忆，而不只是不断追加。**
+**记录个人与项目上下文，让多个 Agent 共用；修订旧记忆，而不只是不断追加。**
 
-这是一个小型、本地优先的开源原型，让多个 Agent 通过 CLI 或 MCP stdio
-共享同一份规范 Markdown 笔记（可使用现有 Obsidian 库）。核心不调用模型、
-不发送遥测，也不要求向量数据库。
+这是一个小型、本地优先的开源原型，用于记录和维护个人与项目上下文，并通过
+CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可人工检查的
+存储格式，不是项目目的本身。核心不调用模型、不发送遥测，也不要求向量数据库。
 
 [Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md)
 
@@ -16,15 +16,16 @@
 
 ## 为什么做这个项目
 
-Agent 共享记忆有三个不同问题：
+共享上下文有三个不同问题：
 
 1. **共同访问**：每个客户端都能读取同一批获准笔记。
 2. **及时读取**：在项目切换、上下文压缩等时机重新加载相关背景。
 3. **持续维护**：新信息修订已有主题，而不是累积互相矛盾的片段。
 
-MCP 解决共同访问，但不保证客户端会在正确时机读取，也不保证事实质量。
-本项目提供精简的文件写入边界和可复现测试，借鉴记忆系统的设计，但不让
-不透明数据库成为规范知识的唯一来源。
+项目目标是让个人偏好和项目理解能够跨工具、跨会话延续，同时明确区分个人与项目
+边界。选择 Markdown 是因为用户可以直接查看、编辑、迁移和版本管理。MCP 提供
+共同访问，但不保证客户端会及时读取，也不保证事实质量；本项目在其上提供精简的
+写入边界和可复现测试。
 
 ```text
 Agent 客户端 + 规则／Hook
@@ -34,7 +35,8 @@ Agent 客户端 + 规则／Hook
       明确的笔记白名单
 读取 → 预览修改 → 校验版本 → 应用修改
           │
-    规范 Markdown 文件
+  个人 + 项目上下文
+  使用可迁移 Markdown 保存
 ```
 
 ## 已实现
@@ -48,6 +50,8 @@ Agent 客户端 + 规则／Hook
 - 显式映射项目根目录；未匹配或有歧义时不猜测项目。
 - 精确删除指定段落；服务状态中不保留第二份笔记历史。
 - 可选 MCP SDK 适配器，暴露六个工具。
+- `shared-memory init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
+  目标目录非空时拒绝覆盖。
 
 ## 尚未实现
 
@@ -55,8 +59,8 @@ Agent 客户端 + 规则／Hook
   或完整对话采集。
 - 保证所有客户端生命周期 Hook 生效，或 Codex、Claude Code、OpenCode、
   WorkBuddy 的模型级集成测试。
-- 与任意外部编辑器协作的事务协议、多用户安全隔离、Windows 支持、笔记新建／
-  移动或完整备份管理。
+- 与任意外部编辑器协作的事务协议、多用户安全隔离、原生 Windows 支持、自动上下文
+  发现或完整备份管理。
 - 持久化幂等回执：重复应用已完成的修改会收到版本冲突；写入结果不确定时，
   应先重新读取再处理。
 
@@ -67,7 +71,7 @@ Agent 客户端 + 规则／Hook
 
 ### P0：验证真实客户端工作流
 
-- 使用隔离笔记库，在两个真实 Agent 客户端验证启动上下文、项目切换、修订旧笔记、
+- 使用隔离上下文库，在两个真实 Agent 客户端验证启动上下文、项目切换、修订旧上下文、
   旧版本冲突处理，以及上下文压缩后的恢复。
 - 逐个验证客户端的 MCP 配置与生命周期 Hook 后，再编写对应接入说明。
 - 验收标准：跨客户端读取与修订有效；明确记录不支持的 Hook 和模型级限制；不使用
@@ -83,7 +87,7 @@ Agent 客户端 + 规则／Hook
 
 ### P2：根据评测改进检索
 
-- 建立一组带规范来源的中英文评测问题，覆盖别名、代码标识、项目隔离、过期事实和
+- 建立一组带规范来源的中英文上下文评测问题，覆盖别名、代码标识、项目隔离、过期事实和
   无答案查询。
 - 将当前子串搜索与 SQLite 全文检索进行比较；只有评测显示召回不足时，才考虑语义检索
   或重排，并衡量新增运行时、模型依赖和数据流复杂度。
@@ -110,11 +114,20 @@ Agent 客户端 + 规则／Hook
 
 ## 快速开始
 
-macOS／Linux，Python 3.11+：
+macOS／Linux，Python 3.11+。先克隆项目：
 
 ```bash
+git clone https://github.com/boyceyuan/shared-memory-gateway.git
+cd shared-memory-gateway
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[mcp]'
+.venv/bin/shared-memory init --project-root /absolute/path/to/your/project
+```
+
+将 `init` 打印的 `mcp_config` 对象复制到你所用 Agent 的 MCP 配置中，重启客户端，
+并让它对当前仓库调用 `bootstrap`。下面的命令只验证项目代码，不代表 Agent 应用已经接好。
+
+```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python scripts/verify_mcp.py
 ```
@@ -122,10 +135,25 @@ python3 -m venv .venv
 可选 `uv` 命令：`uv sync --extra mcp`，然后运行
 `uv run python scripts/verify_mcp.py`。
 
-读取项目自带的合成样例：
+初始化默认在 `~/.shared-memory-gateway/` 创建私有上下文工作区，并打印配置路径和
+MCP 服务命令。可用 `--directory` 指定位置；目标路径已存在时会拒绝使用。检查生成的
+个人／项目上下文模板后，将输出中的 `mcp_config` JSON 复制到 Agent 的 MCP 设置
+（按客户端要求调整外层字段）。初始化器不会改写客户端设置。也可以在 Python 中
+调用 `shared_memory_gateway.cli.initialize(...)` 获取结构化配置。
+使用通用 `mcpServers` 配置结构的客户端可直接粘贴生成的条目。Agent 应用及运行时
+依赖仍需单独安装。
+
+在不同机器间迁移上下文时，迁移 Markdown 文件即可；`memory.local.json` 与
+`.state/` 是本机配置／状态，应忽略或在目标机器重新生成。项目根路径因机器而异，
+在目标机器运行 `init --project-root` 注册当地的 checkout。省略该选项可创建不绑定
+具体项目路径的可迁移个人上下文工作区。POSIX 初始化器会为工作区和上下文文件设置
+仅当前用户可访问的权限；请将工作区放在你自己的备份范围内。`--project-root` 应指向
+要加载项目上下文的目标项目，而不是本 Gateway 仓库；仅创建个人上下文时可省略。
+
+读取项目自带的合成项目上下文：
 
 ```bash
-echo '{"note":"demo.md"}' | .venv/bin/shared-memory --config examples/memory.json read
+echo '{"note":"demo.md"}' | .venv/bin/shared-memory read --config examples/memory.json
 ```
 
 使用核心接口演示如何修订旧结论：
@@ -146,33 +174,42 @@ memory.apply_update(proposal) # 仅在调用方政策允许时应用
 ```
 
 该示例会修改项目自带文件。反复试验前请先将 `examples` 复制到临时目录。
-自动化测试会自行创建并清理临时笔记库，不会触碰项目样例或个人笔记。
+自动化测试会自行创建并清理临时上下文工作区，不会触碰项目样例或个人数据。
 
-## 配置
+## 上下文工作区配置
 
-配置示例见 [`examples/memory.json`](examples/memory.json)。`vault` 和
-`state_dir` 默认相对配置文件解析，也可以使用绝对路径。`state_dir` 必须位于
-笔记库外，并且**所有共享该笔记库的写入进程必须使用同一个目录**。其中只保存
+配置示例见 [`examples/memory.json`](examples/memory.json)，也可以通过 `init` 生成。
+`vault` 和 `state_dir` 默认相对配置文件解析，也可以使用绝对路径。`state_dir`
+必须位于上下文目录外，并且**所有共享该上下文的写入进程必须使用同一个目录**。其中只保存
 空锁文件。请确保配置与文件系统位于可信的本机控制范围内。
 
-`notes` 必须逐个列出已存在的相对 `.md` 文件，不支持 glob；拒绝符号链接。服务
-不会自动修改 frontmatter 或强制笔记模板。请用小型 `bootstrap` 列表，避免把整座
-笔记库注入上下文。项目根路径必须显式使用绝对路径；嵌套路径匹配多个项目时会
+初始工作区将 `personal-context.md` 与 `projects/current-project.md` 分开；新增
+项目上下文文件后需显式加入白名单。`notes` 必须逐个列出已存在的相对 `.md` 文件，
+不支持 glob；拒绝符号链接。服务不会自动修改 frontmatter 或强制文件模板。请用小型
+`bootstrap` 列表，避免把全部上下文注入请求。项目根路径必须显式使用绝对路径；嵌套路径匹配多个项目时会
 返回歧义。项目过滤只是检索范围，不是租户级授权：使用同一配置的客户端都能读取
 该配置白名单中的全部笔记。
 
 ## MCP 接入
 
-在客户端配置中启动：
+`init` 会输出 `mcp_config` JSON，内含当前 Python 环境和配置文件的绝对路径。接受
+常见 `mcpServers` 格式的客户端可以直接粘贴，例如：
 
-```text
-command: /absolute/path/to/.venv/bin/shared-memory-mcp
-args: ["--config", "/absolute/path/to/memory.local.json"]
+```json
+{
+  "mcpServers": {
+    "shared-memory-gateway": {
+      "command": "/absolute/path/to/python",
+      "args": ["-m", "shared_memory_gateway.server", "--config", "/absolute/path/to/memory.local.json"]
+    }
+  }
+}
 ```
 
-各客户端的 MCP 配置格式不同，因此以上是进程启动参数，不是适用于所有客户端的
-完整配置片段。请添加建议的[客户端规则](docs/AGENT_RULES.md)，并验证模型实际
-调用工具；显示“已连接”不代表模型会及时读取记忆。
+该 Python 解释器属于安装此包的环境；移动或重建环境后需重新运行 `init` 或更新路径。
+各客户端的 MCP 配置格式仍可能不同。请添加建议的[客户端规则](docs/AGENT_RULES.md)，
+并验证模型实际调用工具；显示“已连接”不代表模型会及时读取上下文。初始化器不会安装
+Agent 应用或修改客户端配置。
 
 | 工具 | 作用 |
 |---|---|

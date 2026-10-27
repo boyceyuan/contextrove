@@ -6,6 +6,10 @@ network clients. Do not expose it through unauthenticated HTTP.
 
 - Keep the config, vault, parent directories and state directory under trusted
   control. The allowlist covers notes only. A project scope is not an ACL.
+- `shared-memory init` creates a new workspace with owner-only POSIX permissions
+  and refuses an existing target. The portable Markdown context is user data;
+  back it up yourself. Machine-local config and lock state should not be shared
+  or committed. On systems without POSIX permission semantics, verify local ACLs.
 - Symlinks are rejected, but parent-directory check/open races, hardlinks and
   arbitrary privileged filesystem changes are not fully contained. Cooperating
   processes must use the same state directory for their locks to coordinate.

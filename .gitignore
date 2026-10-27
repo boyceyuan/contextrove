@@ -9,4 +9,5 @@ dist/
 .ruff_cache/
 .memory-state/
 memory.local.json
+.shared-memory-gateway/
 .DS_Store

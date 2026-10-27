@@ -2,6 +2,8 @@
 
 This project intentionally starts small. Changes should include synthetic tests,
 clear evidence of what was validated, and honest limits on what was not.
+Its purpose is portable personal and project context; Markdown is an implementation
+format. Avoid framing it solely as a note-taking application.
 
 ```bash
 python3 -m pip install -e '.[mcp]'

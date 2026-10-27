@@ -4,7 +4,7 @@ Date: 2026-10-27. All local runs used disposable, synthetic vaults, not personal
 notes or real client configuration. Temporary vaults were cleaned up by their
 test context managers. No OpenCode/Codex/Claude Code/WorkBuddy settings were changed.
 
-## Core: 18 automated tests passed
+## Core: 21 automated tests passed
 
 Locally exercised on macOS arm64, Python 3.15.1 and Python 3.13.18. Reproduce from an installed
 checkout with:
@@ -32,6 +32,11 @@ The suite verifies:
   replacement reports `WRITE_UNCERTAIN` rather than false success.
 - An injected external change before the last check is detected and preserved.
 - A state directory inside the vault is rejected.
+- Workspace initialization creates separate personal/project context templates,
+  portable relative vault paths, an explicit project mapping when requested,
+  owner-only POSIX permissions, and ready-to-copy MCP JSON using the active Python
+  environment. It refuses existing
+  targets without modifying them.
 
 This does NOT prove safety in the remaining check-to-replace race against an
 arbitrary editor, malicious local filesystem changes, disk power loss, or every

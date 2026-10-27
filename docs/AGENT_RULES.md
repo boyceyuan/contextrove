@@ -1,5 +1,9 @@
 # Suggested client-side rules
 
+The goal is to maintain useful personal and project context across tools and
+sessions. Markdown is the current portable storage format, not the end-user goal.
+Keep personal preferences separate from project facts and evidence.
+
 Install these using your client's supported global instructions or lifecycle
 hooks. The server instructions alone cannot guarantee that a model uses memory.
 Do not install or change unrelated permissions automatically.

@@ -46,12 +46,16 @@ class Memory:
             self._validate_name(note)
         self.bootstrap_notes = config.get("bootstrap", [])
         self.projects = config.get("projects", {})
+        if not isinstance(self.projects, dict):
+            raise MemoryError("INVALID_CONFIG", "projects must be an object")
         self.max_bytes = config.get("max_bytes", 262144)
         if not isinstance(self.max_bytes, int) or not 1 <= self.max_bytes <= 1048576:
             raise MemoryError("INVALID_CONFIG", "max_bytes must be between 1 and 1048576")
         if not set(self.bootstrap_notes) <= self.notes:
             raise MemoryError("INVALID_CONFIG", "Bootstrap notes must be allowlisted")
         for project in self.projects.values():
+            if not isinstance(project, dict) or not isinstance(project.get("notes"), list):
+                raise MemoryError("INVALID_CONFIG", "Each project needs an explicit notes list")
             if not set(project["notes"]) <= self.notes:
                 raise MemoryError("INVALID_CONFIG", "Project notes must be allowlisted")
         # State contains locks only, never note bodies, proposals, or history.
