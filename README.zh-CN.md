@@ -8,7 +8,7 @@
 CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可人工检查的
 存储格式，不是项目目的本身。核心不调用模型、不发送遥测，也不要求向量数据库。
 
-[Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md)
+[Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md) · [命名与设计](docs/DESIGN_REVIEW.zh-CN.md)
 
 > **Alpha／概念验证。** 语义理解与知识整合由调用方负责。本项目不是自动记忆
 > 提取引擎、Mem0 替代品，也不是经过认证的并发编辑器。请先使用合成笔记库，
@@ -228,20 +228,6 @@ codex mcp add shared-memory-gateway -- /absolute/path/to/python -m shared_memory
 并验证模型实际调用工具；显示“已连接”不代表模型会及时读取上下文。初始化器不会安装
 Agent 应用或修改客户端配置。
 
-## 命名与同类项目
-
-“Gateway” 能描述目前的 CLI／MCP 访问边界，但也容易被理解为网络代理。更准确的
-定位是**本地共享上下文层**；仓库和包名暂时保留，以免打断已发布的安装与接入路径。
-候选名称有 *Shared Context*、*Context Ledger*；后者暗示具备持久历史，而当前原型
-尚未提供这一能力。
-
-[Basic Memory](https://github.com/basicmachines-co/basic-memory) 展示了文件优先的
-MCP 访问、项目管理与按客户端接入方式；它的索引、同步和知识图谱尚不属于本原型。
-[Mem0](https://github.com/mem0ai/mem0) 值得借鉴的是显式作用域与可复现评测，
-其模型驱动的提取、检索属于不同能力边界。[Letta](https://github.com/letta-ai/letta-code)
-聚焦带状态的 Agent 运行时，本项目不接管 Agent 生命周期。当前优先级是客户端易接入
-和基于来源的原位修订，并用合成跨客户端会话持续验证。
-
 | 工具 | 作用 |
 |---|---|
 | `bootstrap(project_root)` | 加载启动上下文与项目入口 |
@@ -250,6 +236,14 @@ MCP 访问、项目管理与按客户端接入方式；它的索引、同步和�
 | `propose_update(note, expected_revision, old, new, reason, source)` | 预览一处无歧义的替换 |
 | `apply_update(proposal)` | 重新校验并应用原提案 |
 | `forget(note, expected_revision, text, reason, source)` | 删除一段精确匹配的正文 |
+
+## 命名与设计
+
+推荐用 **Shared Context** 描述产品定位，技术标识暂保留 `shared-memory-gateway`。
+“Gateway” 容易被理解为网络代理，“Context Ledger” 则暗示当前没有的持久历史。
+[命名与设计对照](docs/DESIGN_REVIEW.zh-CN.md) 按存储、更新、作用域和客户端接入
+比较 Basic Memory、MCP Memory Server、OpenLore、Mem0 和 Letta，并列出具体
+借鉴方向与验收条件。
 
 提案摘要只绑定请求参数，**不是数字签名、用户批准或事实属实的证明**。来源和
 理由字段只检查非空，不验证证据。语义与隐私决策仍由调用方负责。来源与理由会在
