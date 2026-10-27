@@ -1,0 +1,13 @@
+{
+  "vault": "vault",
+  "state_dir": "../.memory-state",
+  "notes": ["collaboration.md", "demo.md"],
+  "bootstrap": ["collaboration.md"],
+  "projects": {
+    "demo": {
+      "roots": ["/absolute/path/to/demo-repository"],
+      "notes": ["demo.md"]
+    }
+  },
+  "max_bytes": 262144
+}
