@@ -9,7 +9,7 @@ project context, then sharing it across agents through CLI or MCP stdio. Markdow
 is the current portable, human-readable storage format, not the product's purpose.
 The core has no runtime dependencies, model calls, telemetry, or vector database.
 
-[Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md)
+[Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md) · [Name and design](docs/DESIGN_REVIEW.md)
 
 > **Alpha / proof of concept.** The caller performs semantic synthesis. This is
 > not an autonomous memory extraction engine, a Mem0 replacement, or a certified
@@ -252,23 +252,6 @@ command. Client-specific configuration formats differ; add the suggested
 [client rules](docs/AGENT_RULES.md) and verify actual tool use. The initializer
 does not install an agent client or edit its configuration.
 
-## Name and related projects
-
-“Gateway” describes the current CLI/MCP access boundary, but can suggest a
-network proxy. This project is better described as a **local shared context layer**;
-the published repository and package retain their current names while integration
-paths stabilize. Candidate future names include *Shared Context* and *Context Ledger*
-(the latter would imply a durable history this alpha does not yet provide).
-
-[Basic Memory](https://github.com/basicmachines-co/basic-memory) demonstrates
-file-first MCP access, project setup, and client-native onboarding; its indexing,
-sync and graph features are outside this alpha. [Mem0](https://github.com/mem0ai/mem0)
-shows the value of explicit memory scopes and reproducible evaluations, but its
-model-powered extraction and retrieval are a different boundary. [Letta](https://github.com/letta-ai/letta-code)
-focuses on stateful agent runtimes; this library does not own the agent lifecycle.
-The near-term design priority is reliable client setup and source-preserving
-corrections, measured against synthetic cross-client sessions.
-
 | Tool | Purpose |
 |---|---|
 | `bootstrap(project_root)` | Load configured global context and exact project entries |
@@ -277,6 +260,15 @@ corrections, measured against synthetic cross-client sessions.
 | `propose_update(note, expected_revision, old, new, reason, source)` | Preview one unambiguous replacement |
 | `apply_update(proposal)` | Revalidate and apply the exact proposal |
 | `forget(note, expected_revision, text, reason, source)` | Remove one exact passage |
+
+## Name and design
+
+**Shared Context** is the recommended product description; `shared-memory-gateway`
+remains the technical identifier. “Gateway” suggests a proxy, while “Context
+Ledger” would imply history this alpha does not keep. The [name and design
+review](docs/DESIGN_REVIEW.md) compares Basic Memory, MCP Memory Server, OpenLore,
+Mem0 and Letta by storage, update behavior, scope, and client integration, with
+specific adoption decisions and validation gates.
 
 The proposal digest binds request arguments. **It is not a signature, an approval,
 or proof of truth.** Source / reason fields require nonempty strings, not verified
