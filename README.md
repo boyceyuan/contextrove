@@ -62,6 +62,61 @@ Agent clients + their rules / hooks
 - Durable idempotency receipts: replaying an applied proposal returns a revision
   conflict; reread before retrying an uncertain operation.
 
+## Roadmap / Development plan
+
+This is a proposed, validation-gated roadmap, not a delivery commitment. Items
+remain **planned** until implemented, tested, and reflected in the status above.
+
+### P0 — Validate real client workflows
+
+- Test two real agent clients against a disposable vault: startup bootstrap,
+  project switching, correction of an existing note, stale-write handling, and
+  recovery after context compaction.
+- Document per-client MCP setup and lifecycle hooks only after verifying them.
+- Acceptance: cross-client reads and corrections work; unsupported hooks and
+  model-level limitations are explicitly documented; no production vault is used.
+
+### P1 — Harden file updates
+
+- Evaluate recovery snapshots / backups, crash recovery, stricter external-edit
+  coordination, and filesystem metadata behavior.
+- Add tests for each supported operating system and filesystem before expanding
+  the support claim.
+- Acceptance: interrupted writes have a documented recovery path; conflict and
+  partial-failure outcomes remain explicit. Do not claim atomic coordination with
+  arbitrary external editors without a protocol they participate in.
+
+### P2 — Improve retrieval when evaluations justify it
+
+- Build a small, source-annotated evaluation set for Chinese, English, aliases,
+  code identifiers, project isolation, stale facts, and no-answer queries.
+- Compare current literal search with SQLite full-text search; consider semantic
+  retrieval or reranking only if measured recall gaps justify the added runtime,
+  model, and data-flow complexity.
+- Acceptance: reproducible evaluation shows source-grounded retrieval improves
+  without cross-project leakage or unacceptable latency / context growth.
+
+### P3 — Optional synthesis integrations
+
+- Explore Mem0 / Hindsight as candidate extraction or synthesis adapters, not as a
+  second canonical store. Produce reviewable diffs against existing topics.
+- Define provenance, user policy, correction, deletion, and outbound-data behavior
+  before enabling any model-backed processing.
+- Acceptance: corrections replace or qualify old claims; stale/conflicting facts
+  are not silently accumulated or promoted to truth; deletion scope is explicit.
+
+### Explicitly out of scope for the initial release
+
+No hosted multi-user service, automatic full-conversation ingestion, graph database,
+or autonomous memory rewriting is planned until a concrete need and security model
+justify it. Contributions and issue reports can help reprioritize this roadmap.
+
+## Future directions / 后续方向
+
+See the stage-gated [development plan](#roadmap--development-plan). Near term,
+priorities are real-client validation and file-update recovery; retrieval and
+model-backed synthesis remain conditional on evaluation results.
+
 ## Quick start
 
 Python 3.11+ on macOS or Linux:
