@@ -142,3 +142,16 @@ do not prove that remote GitHub Actions has run. Once published, confirm CI
 independently. Follow-up acceptance should use real client sessions, unique
 non-sensitive markers, project switching and compaction recovery; remove the
 markers and inspect current files afterwards.
+
+## Quick-start CLI checks (2026-10-28)
+
+The `demo` command uses a disposable synthetic project and workspace. It reads
+`pending`, applies a revision-checked correction, and reads `verified` using a
+fresh core instance; the temporary workspace is removed. This is a local-core
+check, not a model session or MCP protocol check.
+
+The `setup` tests cover registering OpenCode globally and Codex through their
+CLI argument shapes, reusing the same project's existing notes, refusing an
+unrelated directory or missing client, and reporting a partial registration
+failure. Client commands are mocked in these tests: they do not establish that
+either installed client connects, calls tools, or reads context automatically.

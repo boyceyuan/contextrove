@@ -98,6 +98,8 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
   会话读取到修订内容；证据与边界见[验证记录](docs/VALIDATION.md)。
 - `shared-memory init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
   目标路径已存在时拒绝使用。
+- `shared-memory demo` 验证隔离的本地修订；`setup --client` 初始化或复用项目工作区，
+  通过 OpenCode／Codex CLI 注册 MCP 服务。
 
 ## 尚未实现
 
@@ -111,64 +113,39 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 
 ## 快速开始
 
-macOS／Linux，Python 3.11+。首次运行使用临时项目和临时上下文目录，不导入已有笔记。
-
-1. 安装并初始化隔离工作区：
-
-   ```bash
-   git clone https://github.com/boyceyuan/shared-memory-gateway.git
-   cd shared-memory-gateway
-   python3 -m venv .venv
-   .venv/bin/python -m pip install -e '.[mcp]'
-   DEMO_DIR="$(mktemp -d)"
-   PROJECT_ROOT="$DEMO_DIR/project"
-   WORKSPACE="$DEMO_DIR/context-workspace"
-   CONFIG="$WORKSPACE/memory.local.json"
-   mkdir "$PROJECT_ROOT"
-   .venv/bin/shared-memory init --directory "$WORKSPACE" --project-root "$PROJECT_ROOT"
-   ```
-
-2. 在新建项目笔记里写入合成标记，再验证本地读取。`bootstrap` 应返回
-   `status: matched`，`entries` 中包含 `projects/current-project.md`；`read`
-   应返回标记与版本号。这里只修改刚创建的上下文工作区。
-
-   ```bash
-   printf '\nStatus: pending. (synthetic quick-start marker)\n' >> "$WORKSPACE/context/projects/current-project.md"
-   printf '{"project_root":"%s"}\n' "$PROJECT_ROOT" | .venv/bin/shared-memory bootstrap --config "$CONFIG"
-   printf '%s\n' '{"note":"projects/current-project.md"}' | .venv/bin/shared-memory read --config "$CONFIG"
-   ```
-
-3. 将客户端接到**同一份配置**。Codex 可直接执行：
-
-   ```bash
-   codex mcp add shared-memory-gateway -- "$PWD/.venv/bin/python" -m shared_memory_gateway.server --config "$CONFIG"
-   ```
-
-   OpenCode V2 则将 `init` 输出的 `opencode_v2_config` 合并到 `opencode.json(c)`，
-   不要使用通用 `mcp_config`；格式见 [MCP 接入](#mcp-接入)。在 `PROJECT_ROOT`
-   中重启所选客户端，让它以该绝对路径调用 `bootstrap`，再调用
-   `read("projects/current-project.md")`，核对是否读到第 2 步的合成标记。
-   **CLI 读取证明本机工作区可用，Agent 调用工具才证明该客户端的 MCP 接入可用。**
-
-此前 Codex → OpenCode 跨客户端修订／读取的实际过程和边界见
-[模型会话验证](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)。
-无提示启动自动读取仍未验收。正式使用时用真实项目根路径初始化**新目录**（例如不传
-`--directory`，使用默认的 `~/.shared-memory-gateway/`），再将客户端指向该工作区
-配置。初始化器遇到已存在的目标路径会拒绝使用；保留演示上下文前须替换合成标记。
-`codex mcp add` 会注册客户端配置；试用后丢弃临时目录前，运行
-`codex mcp remove shared-memory-gateway` 清理该入口。
-
-独立复现代码层测试：
+macOS／Linux，Python 3.11+。先在仓库目录安装：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/verify_mcp.py
+git clone https://github.com/boyceyuan/shared-memory-gateway.git
+cd shared-memory-gateway
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[mcp]'
 ```
 
-测试使用合成样例，不配置 Agent。`init` 会以 JSON 输出生成的路径与客户端配置。
-仅记录个人上下文时省略 `--project-root`。迁移到另一台机器时，在目标机器用其项目路径重新初始化，再仅将
-上下文 Markdown 复制到新工作区；`memory.local.json` 与 `.state/` 属于本机配置
-与状态。请自行备份。
+仍在本仓库目录，选择一个已安装客户端，只需替换要记录上下文的项目绝对路径：
+
+```bash
+.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+# 或：.venv/bin/shared-memory setup --client codex --project-root /absolute/path/to/your/project
+```
+
+`setup` 会创建 `~/.shared-memory-gateway/` 的个人／项目 Markdown，通过客户端
+CLI 注册本地 MCP 服务，并输出笔记路径。编辑项目笔记、重启客户端，再要求它以当前
+项目的绝对路径调用 `bootstrap` 并 `read` 返回的项目入口。
+**注册成功不代表模型已调用工具。**同一项目接入第二个客户端时，换一个
+`--client`、保持同一 `--project-root` 再执行 `setup`，已有笔记会保留。OpenCode 使用全局注册；Codex 使用
+其 MCP CLI 的作用域。不相关的已有目录会被拒绝。`setup` 使用固定 MCP 服务名；
+其他项目不能仅靠指定新目录并行接入，需要按 [MCP 接入](#mcp-接入) 手动配置项目
+与服务名。若工作区创建后注册失败，错误会给出重试
+命令；同一项目重复执行 `setup` 也会复用工作区。
+
+想先做无需客户端的自检，可在 Gateway 仓库运行 `.venv/bin/shared-memory demo`：
+它用自动清理的合成文件输出 `before: pending`、`after: verified` 和
+`fresh_read: PASS`，**仅验证本地核心**。
+此前的 [Codex → OpenCode 模型会话验证](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
+使用的是隔离合成笔记；无提示启动自动读取仍未验收。
+
+手动接入、已有工作区、迁移和协议测试见 [MCP 接入](#mcp-接入)及[验证记录](docs/VALIDATION.md)。
 
 ## 上下文工作区配置
 
