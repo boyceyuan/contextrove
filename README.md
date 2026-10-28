@@ -11,6 +11,8 @@ The core has no runtime dependencies, model calls, telemetry, or vector database
 
 [Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md) · [Name and design](docs/DESIGN_REVIEW.md)
 
+[Quick start](#quick-start) · [Architecture](#architecture) · [Context model](#context-and-responsibility) · [MCP integration](#mcp-integration) · [Roadmap](#roadmap--development-plan)
+
 > **Alpha / proof of concept.** The caller performs semantic synthesis. This is
 > not an autonomous memory extraction engine, a Mem0 replacement, or a certified
 > concurrent editor. Start with a synthetic vault, not your production notes.
@@ -30,17 +32,125 @@ because people can inspect, edit, move, and version it with ordinary tools. MCP
 provides a common access path; it does not itself guarantee timely retrieval or
 factual quality. This project adds a small write boundary and reproducible tests.
 
-```text
-Agent clients + their rules / hooks
-                │
-         CLI or MCP stdio
-                │
-         Explicit note allowlist
-         Read → Propose diff → Check revision → Apply
-                │
-       Personal + project context
-       stored as portable Markdown
+## Architecture
+
+```mermaid
+flowchart TB
+    R[Client rules / optional hooks guide tool use]
+    subgraph P1[OpenCode connection]
+        A[OpenCode agent] --> S1[MCP stdio server process with core]
+    end
+    subgraph P2[Codex connection]
+        B[Codex agent] --> S2[MCP stdio server process with core]
+    end
+    subgraph P3[CLI process]
+        CLI[JSON CLI] --> K3[Core instance]
+    end
+    R -.-> A
+    R -.-> B
+    CFG[Local config: allowlist and project roots] --> S1
+    CFG --> S2
+    CFG --> K3
+    S1 -->|read / validate / apply| V[(Canonical Markdown: personal and project context)]
+    S2 -->|read / validate / apply| V
+    K3 -->|read / validate / apply| V
+    S1 <-->|flock| L[(Shared state: empty lock files)]
+    S2 <-->|flock| L
+    K3 <-->|flock| L
+    E[Human editor, e.g. Obsidian] <-->|direct file edits| V
 ```
+
+Each connected client launches its own MCP stdio server process, with its own
+core instance. Other MCP clients can use the adapter but have not been validated.
+The CLI uses the same core implementation. All processes use the same local
+config, Markdown files, and state directory; the state holds
+locks, not a second copy of context. A human editor works on the files directly
+and does not participate in the gateway lock. Project filtering selects relevant
+content; it is **not** an access-control boundary. A client configured with this
+workspace can read every allowlisted file.
+
+### Context and responsibility
+
+| Layer | Responsibility | Where it lives |
+|---|---|---|
+| Agent client | Decide when to load context, assess source and meaning, review diffs, enforce user policy | Client rules or hooks; outside this server |
+| MCP / CLI adapter | Expose the same core operations to multiple processes | `server.py` (optional `mcp` extra), `cli.py` |
+| Shared core | Check allowlist, resolve an explicit project root, read/search current files, compare revisions and apply an exact edit | `core.py` |
+| Canonical context | Separate personal and project topics, edited in place and portable as files | UTF-8 Markdown under configured `vault` |
+| Machine-local metadata | List approved files, bootstrap entries, project mappings and coordinated locks | `memory.local.json` and `.state/`; not knowledge copies |
+
+`init` creates `context/personal-context.md` and
+`context/projects/current-project.md`. It bootstraps only the personal file;
+when a registered root matches, `bootstrap(project_root)` returns the project's
+file path in `entries`, which the agent then reads explicitly. Additional
+topics require both an existing Markdown file and an explicit allowlist entry.
+Neither a project match nor a search result proves a fact is true. The client
+must keep personal preferences distinct from project claims and their evidence.
+
+For larger workspaces, organize context by **personal preferences**, **collaboration
+rules**, and **project knowledge**. Within project knowledge, link domain → system →
+topic → evidence; keep dates, environments and verification status in the relevant
+topic. These are authoring conventions, not a schema enforced by the core. The
+starter puts collaboration rules in the personal template; split them into a
+separate allowlisted file when useful. Obsidian is an optional editor, not a runtime
+dependency.
+
+### Read and correction paths
+
+1. **Discover:** a client calls `bootstrap` with its actual absolute project
+   directory; the core returns a small global context and matching project
+   paths, or an explicit unmatched/ambiguous status. `search` rereads allowlisted
+   files and returns literal-match snippets; `read` returns the full selected file
+   and its raw-byte SHA-256 revision.
+2. **Propose:** for a stable, sourced correction, the client supplies the exact
+   old and new passages, revision, reason and source. `propose_update` requires a
+   unique old passage and returns a unified diff without writing anything.
+3. **Apply:** after reviewing the diff under its own policy, the client calls
+   `apply_update`. The core rechecks the revision under a cooperative file lock,
+   writes a temporary file, checks for an external change and atomically replaces
+   the file. A stale revision fails; the client must reread and reconcile.
+   `forget` uses the same exact-passage update path and cannot erase Git history,
+   backups or past model conversations.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent A
+    participant S1 as A's MCP and core
+    participant F as Shared Markdown
+    participant S2 as B's MCP and core
+    participant B as Agent B
+    A->>S1: read(topic)
+    S1->>F: Read current bytes
+    S1-->>A: Content + revision r1
+    A->>S1: propose_update(r1, old, new, reason, source)
+    S1->>F: Check revision and unique target
+    S1-->>A: Proposal + diff, no content write
+    Note over A: Review meaning and diff under client policy
+    A->>S1: apply_update(proposal)
+    Note over S1,F: Acquire shared per-file lock and recheck revision
+    alt Current revision still r1
+        S1->>F: Temporary file + final check + atomic replace
+        S1-->>A: Updated revision r2
+    else Stale revision
+        S1-->>A: VERSION_CONFLICT, reread and reconcile
+    end
+    B->>S2: read(topic)
+    S2->>F: Read current bytes
+    S2-->>B: Current content + revision
+```
+
+Both core instances read the same files; there is no central daemon. Atomic
+replacement prevents partial file contents;
+the final external-edit check is best effort. A failure after replacement can
+return `WRITE_UNCERTAIN`, so read the file before deciding whether to retry.
+
+This is a **file-first, local single-user design**, not an automatic fact
+extractor or an agent runtime. MCP makes operations available; it does not
+trigger startup reads or compaction recovery. The lock coordinates gateway
+processes only: direct editor writes can still race between the final check
+and replacement. Recovery snapshots and better retrieval are [planned](#roadmap--development-plan),
+not components of the diagram. See [validation](docs/VALIDATION.md) for tested
+cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 ## Implemented
 
@@ -68,61 +178,6 @@ Agent clients + their rules / hooks
   boundary, native Windows support, automatic context discovery, or full backup management.
 - Durable idempotency receipts: replaying an applied proposal returns a revision
   conflict; reread before retrying an uncertain operation.
-
-## Roadmap / Development plan
-
-This is a proposed, validation-gated roadmap, not a delivery commitment. Items
-remain **planned** until implemented, tested, and reflected in the status above.
-
-### P0 — Validate real client workflows
-
-- Extend the completed Codex → OpenCode model-session correction/read check with
-  startup retrieval without prompting, project switching, stale-write handling,
-  and recovery after context compaction.
-- Document per-client MCP setup and lifecycle hooks only after verifying them.
-- Acceptance: cross-client reads and corrections work; unsupported hooks and
-  model-level limitations are explicitly documented; no production vault is used.
-
-### P1 — Harden file updates
-
-- Evaluate recovery snapshots / backups, crash recovery, stricter external-edit
-  coordination, and filesystem metadata behavior.
-- Add tests for each supported operating system and filesystem before expanding
-  the support claim.
-- Acceptance: interrupted writes have a documented recovery path; conflict and
-  partial-failure outcomes remain explicit. Do not claim atomic coordination with
-  arbitrary external editors without a protocol they participate in.
-
-### P2 — Improve retrieval when evaluations justify it
-
-- Build a small, source-annotated context evaluation set for Chinese, English, aliases,
-  code identifiers, project isolation, stale facts, and no-answer queries.
-- Compare current literal search with SQLite full-text search; consider semantic
-  retrieval or reranking only if measured recall gaps justify the added runtime,
-  model, and data-flow complexity.
-- Acceptance: reproducible evaluation shows source-grounded retrieval improves
-  without cross-project leakage or unacceptable latency / context growth.
-
-### P3 — Optional synthesis integrations
-
-- Explore Mem0 / Hindsight as candidate extraction or synthesis adapters, not as a
-  second canonical store. Produce reviewable diffs against existing topics.
-- Define provenance, user policy, correction, deletion, and outbound-data behavior
-  before enabling any model-backed processing.
-- Acceptance: corrections replace or qualify old claims; stale/conflicting facts
-  are not silently accumulated or promoted to truth; deletion scope is explicit.
-
-### Explicitly out of scope for the initial release
-
-No hosted multi-user service, automatic full-conversation ingestion, graph database,
-or autonomous memory rewriting is planned until a concrete need and security model
-justify it. Contributions and issue reports can help reprioritize this roadmap.
-
-## Future directions / 后续方向
-
-See the stage-gated [development plan](#roadmap--development-plan). Near term,
-priorities are real-client validation and file-update recovery; retrieval and
-model-backed synthesis remain conditional on evaluation results.
 
 ## Quick start
 
@@ -261,20 +316,71 @@ does not install an agent client or edit its configuration.
 | `apply_update(proposal)` | Revalidate and apply the exact proposal |
 | `forget(note, expected_revision, text, reason, source)` | Remove one exact passage |
 
-## Name and design
-
-**Shared Context** is the recommended product description; `shared-memory-gateway`
-remains the technical identifier. “Gateway” suggests a proxy, while “Context
-Ledger” would imply history this alpha does not keep. The [name and design
-review](docs/DESIGN_REVIEW.md) compares Basic Memory, MCP Memory Server, OpenLore,
-Mem0 and Letta by storage, update behavior, scope, and client integration, with
-specific adoption decisions and validation gates.
-
 The proposal digest binds request arguments. **It is not a signature, an approval,
 or proof of truth.** Source / reason fields require nonempty strings, not verified
 evidence. The caller must make and enforce semantic / privacy decisions. Source
 and rationale are returned but not automatically persisted: put lasting evidence
 in the topic's replacement text when appropriate.
+
+## Name and design
+
+The product name is under discussion; the published identifiers remain
+`shared-memory-gateway`. The [design review](docs/DESIGN_REVIEW.md) compares
+Basic Memory, MCP Memory Server, OpenLore, Mem0 and Letta by storage, update
+behavior, scope and client integration. This README also draws on the
+[Hindsight README](https://github.com/vectorize-io/hindsight#readme)'s separation
+of concepts, operations and integrations, and
+[OpenLore](https://github.com/aakarim/OpenLore#readme)'s explanation of read/write
+ownership. The diagrams above describe this repository's implementation.
+
+## Roadmap / Development plan
+
+This is a proposed, validation-gated roadmap, not a delivery commitment. Items
+remain **planned** until implemented, tested, and reflected in the status above.
+
+### P0 — Validate real client workflows
+
+- Extend the completed Codex → OpenCode model-session correction/read check with
+  startup retrieval without prompting, project switching, stale-write handling,
+  and recovery after context compaction.
+- Document per-client MCP setup and lifecycle hooks only after verifying them.
+- Acceptance: cross-client reads and corrections work; unsupported hooks and
+  model-level limitations are explicitly documented; no production vault is used.
+
+### P1 — Harden file updates
+
+- Evaluate recovery snapshots / backups, crash recovery, stricter external-edit
+  coordination, and filesystem metadata behavior.
+- Add tests for each supported operating system and filesystem before expanding
+  the support claim.
+- Acceptance: interrupted writes have a documented recovery path; conflict and
+  partial-failure outcomes remain explicit. Do not claim atomic coordination with
+  arbitrary external editors without a protocol they participate in.
+
+### P2 — Improve retrieval when evaluations justify it
+
+- Build a small, source-annotated context evaluation set for Chinese, English, aliases,
+  code identifiers, project isolation, stale facts, and no-answer queries.
+- Compare current literal search with SQLite full-text search; consider semantic
+  retrieval or reranking only if measured recall gaps justify the added runtime,
+  model, and data-flow complexity.
+- Acceptance: reproducible evaluation shows source-grounded retrieval improves
+  without cross-project leakage or unacceptable latency / context growth.
+
+### P3 — Optional synthesis integrations
+
+- Explore Mem0 / Hindsight as candidate extraction or synthesis adapters, not as a
+  second canonical store. Produce reviewable diffs against existing topics.
+- Define provenance, user policy, correction, deletion, and outbound-data behavior
+  before enabling any model-backed processing.
+- Acceptance: corrections replace or qualify old claims; stale/conflicting facts
+  are not silently accumulated or promoted to truth; deletion scope is explicit.
+
+### Explicitly out of scope for the initial release
+
+No hosted multi-user service, automatic full-conversation ingestion, graph database,
+or autonomous memory rewriting is planned until a concrete need and security model
+justify it. Contributions and issue reports can help reprioritize this roadmap.
 
 ## Concurrency boundaries
 
