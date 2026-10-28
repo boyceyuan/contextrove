@@ -2,8 +2,12 @@
 
 import argparse
 import json
+import shlex
+import shutil
 import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from .core import Memory, MemoryError
@@ -106,12 +110,110 @@ def initialize(directory: str | Path, project_root: str | Path | None = None) ->
     }
 
 
+def demo() -> dict:
+    """Run a disposable, local correction without touching user context."""
+    with tempfile.TemporaryDirectory(prefix="shared-memory-demo-") as temporary:
+        base = Path(temporary)
+        project_root = base / "project"
+        project_root.mkdir()
+        setup = initialize(base / "workspace", project_root)
+        note = Path(setup["vault"]) / "projects" / "current-project.md"
+        note.write_text(note.read_text(encoding="utf-8") + "\nStatus: pending.\n", encoding="utf-8")
+
+        writer = Memory(setup["config"])
+        matched = writer.bootstrap(str(project_root))
+        before = writer.read("projects/current-project.md")
+        proposal = writer.propose_update(
+            note="projects/current-project.md", expected_revision=before["revision"],
+            old="Status: pending.", new="Status: verified.",
+            reason="Correct the synthetic status", source="Synthetic demo",
+        )
+        writer.apply_update(proposal)
+        after = Memory(setup["config"]).read("projects/current-project.md")
+        if (matched["status"] != "matched"
+                or "projects/current-project.md" not in matched["entries"]
+                or "Status: pending." not in before["content"]
+                or "Status: verified." not in after["content"]
+                or "Status: pending." in after["content"]
+                or before["revision"] == after["revision"]):
+            raise MemoryError("DEMO_FAILED", "Synthetic correction did not persist")
+        return {"scope": "Local core only; no agent or MCP session",
+                "project": matched["status"], "before": "pending", "after": "verified",
+                "fresh_read": "PASS"}
+
+
+def setup(client: str, directory: str | Path, project_root: str | Path) -> dict:
+    """Initialize context and explicitly register one installed agent client."""
+    root = Path(project_root).expanduser().resolve()
+    if not root.is_dir():
+        raise MemoryError("INVALID_PROJECT_ROOT", "project_root must be an existing directory")
+    target = Path(directory).expanduser().absolute()
+    existing = target.exists()
+    if target.is_symlink():
+        raise MemoryError("WORKSPACE_MISMATCH", f"Refusing symlink workspace: {target}")
+    if existing:
+        config_path = target / "memory.local.json"
+        try:
+            if config_path.is_symlink():
+                raise ValueError("Config must not be a symlink")
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            matches = [p for p in config["projects"].values()
+                       if p["roots"] == [str(root)]
+                       and p["notes"] == ["projects/current-project.md"]]
+            if (config["vault"] != "context" or config["state_dir"] != ".state"
+                    or "personal-context.md" not in config["notes"] or len(matches) != 1
+                    or (target / "context").is_symlink()):
+                raise ValueError("Workspace does not match this project")
+            memory = Memory(config_path)
+            memory.read("personal-context.md")
+            memory.read("projects/current-project.md")
+            config_path = config_path.resolve()
+        except (OSError, ValueError, KeyError, TypeError, MemoryError) as exc:
+            raise MemoryError("WORKSPACE_MISMATCH",
+                              f"Existing workspace at {target} is not initialized for {root}") from exc
+    executable = shutil.which(client)
+    if executable is None:
+        raise MemoryError("CLIENT_NOT_FOUND", f"Install {client} before running setup")
+    initialized = (initialize(target, root) if not existing else {
+        "workspace": str(target.resolve()), "vault": str(memory.vault),
+        "config": str(config_path), "mcp_command": str(Path(sys.executable).absolute()),
+        "mcp_args": ["-m", "shared_memory_gateway.server", "--config", str(config_path)],
+    })
+    command = [executable, "mcp", "add", "shared-memory-gateway",
+               *(["--global"] if client == "opencode" else []), "--",
+               initialized["mcp_command"], *initialized["mcp_args"]]
+    try:
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                check=False, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise MemoryError("CLIENT_SETUP_FAILED",
+                          f"Workspace available at {target}, but {client} registration failed: {exc}. "
+                          f"Retry with: {shlex.join(command)}") from exc
+    if result.returncode != 0:
+        raise MemoryError("CLIENT_SETUP_FAILED",
+                          f"Workspace {'reused' if existing else 'created'} at {target}, but "
+                          f"{client} registration failed. "
+                          f"Fix the client and retry setup or run: {shlex.join(command)}")
+    return {"status": "registered", "client": client, "project_root": str(root),
+            "workspace": initialized["workspace"], "config": initialized["config"],
+            "workspace_reused": existing,
+            "personal_note": str(Path(initialized["vault"]) / "personal-context.md"),
+            "project_note": str(Path(initialized["vault"]) / "projects/current-project.md"),
+            "next": "Restart the client and ask it to bootstrap this project, then read the project note",
+            "verified": "Client command succeeded; model tool use not yet checked"}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Manage personal and project context for AI agents")
     subparsers = parser.add_subparsers(dest="method", required=True)
     init = subparsers.add_parser("init", help="Create a portable context workspace and local config")
     init.add_argument("--directory", default="~/.shared-memory-gateway")
     init.add_argument("--project-root", help="Optionally register the current project's absolute path")
+    subparsers.add_parser("demo", help="Run a disposable local correction and fresh read")
+    setup_parser = subparsers.add_parser("setup", help="Initialize context and register an agent client")
+    setup_parser.add_argument("--client", choices=("opencode", "codex"), required=True)
+    setup_parser.add_argument("--directory", default="~/.shared-memory-gateway")
+    setup_parser.add_argument("--project-root", default=".")
     for method in METHODS:
         command = subparsers.add_parser(method)
         command.add_argument("--config", required=True)
@@ -121,6 +223,12 @@ def main():
             result = initialize(args.directory, args.project_root)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("Context workspace initialized. Review the generated templates and MCP command.", file=sys.stderr)
+            return
+        if args.method == "demo":
+            print(json.dumps(demo()))
+            return
+        if args.method == "setup":
+            print(json.dumps(setup(args.client, args.directory, args.project_root), ensure_ascii=False, indent=2))
             return
         parameters = json.load(sys.stdin)
         result = getattr(Memory(args.config), args.method)(**parameters)

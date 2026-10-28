@@ -105,6 +105,8 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 - `shared-memory init` creates separate personal and project context templates,
   an allowlisted workspace, and a machine-local config without overwriting files.
+- `shared-memory demo` checks a disposable local correction; `setup --client`
+  creates or reuses a project workspace and registers OpenCode or Codex via its CLI.
 - Exact allowlisted UTF-8 Markdown files; no recursive vault crawling.
 - Raw-byte SHA-256 revisions, diff previews and exact single-passage replacements.
 - Cross-process POSIX `flock`, atomic replacement and best-effort external-edit checks.
@@ -131,71 +133,45 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 ## Quick start
 
-Python 3.11+ on macOS or Linux. The first run uses temporary directories for
-both the project and its context. Nothing is imported from your own notes.
-
-1. Install and initialize a disposable workspace:
-
-   ```bash
-   git clone https://github.com/boyceyuan/shared-memory-gateway.git
-   cd shared-memory-gateway
-   python3 -m venv .venv
-   .venv/bin/python -m pip install -e '.[mcp]'
-   DEMO_DIR="$(mktemp -d)"
-   PROJECT_ROOT="$DEMO_DIR/project"
-   WORKSPACE="$DEMO_DIR/context-workspace"
-   CONFIG="$WORKSPACE/memory.local.json"
-   mkdir "$PROJECT_ROOT"
-   .venv/bin/shared-memory init --directory "$WORKSPACE" --project-root "$PROJECT_ROOT"
-   ```
-
-2. Add a synthetic marker to the new project note and check the local read path.
-   `bootstrap` should return `status: matched` and
-   `entries: ["projects/current-project.md"]`; `read` should return the marker
-   and a revision. This edits only the newly created context workspace.
-
-   ```bash
-   printf '\nStatus: pending. (synthetic quick-start marker)\n' >> "$WORKSPACE/context/projects/current-project.md"
-   printf '{"project_root":"%s"}\n' "$PROJECT_ROOT" | .venv/bin/shared-memory bootstrap --config "$CONFIG"
-   printf '%s\n' '{"note":"projects/current-project.md"}' | .venv/bin/shared-memory read --config "$CONFIG"
-   ```
-
-3. Connect a client to **that same config**. For Codex, run:
-
-   ```bash
-   codex mcp add shared-memory-gateway -- "$PWD/.venv/bin/python" -m shared_memory_gateway.server --config "$CONFIG"
-   ```
-
-   For OpenCode V2, merge the `opencode_v2_config` object printed by `init` into
-   `opencode.json(c)`; do not use its generic `mcp_config` object. See
-   [MCP integration](#mcp-integration) for the exact format. Restart the chosen
-   client in `PROJECT_ROOT` and ask it to call `bootstrap` with that absolute
-   path, then `read("projects/current-project.md")`. Confirm it returns the
-   synthetic marker from step 2. **CLI read proves the local workspace works;
-   an agent tool call proves that client's MCP connection works.**
-
-The [model-session validation](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
-records how the separate Codex → OpenCode correction/read test was run and what
-it did not verify. Startup retrieval without a prompt is not yet validated.
-For lasting use, initialize a **new** directory with your actual project root
-(for example, omit `--directory` to use `~/.shared-memory-gateway/`), then point
-your client at that workspace's config. The initializer refuses existing paths;
-replace the synthetic marker before retaining any demo context.
-`codex mcp add` registers a client setting; after a temporary trial, run
-`codex mcp remove shared-memory-gateway` before discarding the demo directory.
-
-To reproduce the project's code-level checks independently:
+Python 3.11+ on macOS or Linux. Install from a checkout:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/verify_mcp.py
+git clone https://github.com/boyceyuan/shared-memory-gateway.git
+cd shared-memory-gateway
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[mcp]'
 ```
 
-These checks use synthetic fixtures; they do not configure an agent. `init`
-prints its generated paths and client config as JSON. Omit `--project-root` for
-personal-only context. For migration, initialize on the destination machine with its project
-path and copy only the context Markdown into the new workspace. The generated
-`memory.local.json` and `.state/` are machine-local. Keep your own backups.
+Still in this checkout, register an installed client for the project you want
+to keep context for (replace the one absolute project path):
+
+```bash
+.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+# or: .venv/bin/shared-memory setup --client codex --project-root /absolute/path/to/your/project
+```
+
+`setup` creates `~/.shared-memory-gateway/` with separate personal/project
+Markdown, registers the local MCP server using the chosen client's CLI, and
+prints the note paths. Edit the project note, restart the client, then ask it
+to `bootstrap` this project's absolute path and `read` the returned project
+entry. **A successful registration is not proof that the model used the tool.**
+For a second client in the *same project*, run `setup` again with its `--client`
+and the same `--project-root`; it reuses the existing notes. OpenCode
+registration is global; Codex uses its MCP CLI scope. An unrelated existing
+context directory is rejected. For a different project, a new `--directory`
+alone is insufficient because `setup` uses a fixed MCP server name. Configure
+additional projects and server names manually using [MCP integration](#mcp-integration).
+If registration fails after workspace creation, the error includes a retry
+command; rerunning `setup` with the same project also reuses the workspace.
+
+Want a no-client self-check first? Run `.venv/bin/shared-memory demo`. It
+prints `before: pending`, `after: verified`, and
+`fresh_read: PASS` using disposable files. **This only checks the local core.**
+The previous [Codex → OpenCode model-session test](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
+used synthetic notes; startup retrieval without prompting remains unverified.
+
+For manual setup, existing workspaces, migration, and protocol checks, see
+[MCP integration](#mcp-integration) and [validation](docs/VALIDATION.md).
 
 ## Context workspace configuration
 

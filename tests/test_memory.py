@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import subprocess
@@ -7,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from shared_memory_gateway.cli import initialize
+from shared_memory_gateway.cli import initialize, setup
 from shared_memory_gateway.core import Memory, MemoryError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +81,107 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("verified", read["content"])
         self.assertNotIn("pending", read["content"])
+
+    def test_demo_command_corrects_and_cleans_isolated_workspace(self):
+        with tempfile.TemporaryDirectory(prefix="shared-memory-demo-parent-") as parent:
+            env = dict(os.environ, TMPDIR=parent, PYTHONPATH=str(ROOT / "src"))
+            result = subprocess.run(
+                [sys.executable, "-m", "shared_memory_gateway.cli", "demo"],
+                capture_output=True, text=True, env=env, check=True,
+            )
+            output = json.loads(result.stdout)
+            self.assertEqual("matched", output["project"])
+            self.assertEqual("pending", output["before"])
+            self.assertEqual("verified", output["after"])
+            self.assertEqual("PASS", output["fresh_read"])
+            self.assertIn("no agent or MCP", output["scope"])
+            self.assertEqual([], list(Path(parent).iterdir()))
+
+    def test_setup_registers_global_opencode_without_editing_project(self):
+        project = self.root / "project"
+        project.mkdir()
+        with patch("shared_memory_gateway.cli.shutil.which", return_value="/usr/bin/opencode"), \
+             patch("shared_memory_gateway.cli.subprocess.run") as run:
+            run.return_value.returncode = 0
+            output = setup("opencode", self.root / "workspace", project)
+        self.assertEqual("registered", output["status"])
+        self.assertEqual([], list(project.iterdir()))
+        self.assertEqual("opencode", output["client"])
+        args = run.call_args.args[0]
+        self.assertEqual(["/usr/bin/opencode", "mcp", "add", "shared-memory-gateway",
+                          "--global", "--"], args[:6])
+        self.assertEqual(output["config"], args[-1])
+        self.assertTrue(Path(output["project_note"]).is_file())
+
+    def test_setup_fails_before_writing_without_client_or_on_unrelated_target(self):
+        project = self.root / "project"
+        project.mkdir()
+        workspace = self.root / "workspace"
+        with patch("shared_memory_gateway.cli.shutil.which", return_value=None):
+            self.assert_code("CLIENT_NOT_FOUND", lambda: setup("codex", workspace, project))
+        self.assertFalse(workspace.exists())
+        workspace.mkdir()
+        with patch("shared_memory_gateway.cli.subprocess.run") as run:
+            self.assert_code("WORKSPACE_MISMATCH", lambda: setup("codex", workspace, project))
+            run.assert_not_called()
+
+    def test_setup_reuses_context_for_second_client_without_overwriting_notes(self):
+        project = self.root / "project"
+        project.mkdir()
+        workspace = self.root / "workspace"
+        with patch("shared_memory_gateway.cli.shutil.which", side_effect=lambda x: f"/usr/bin/{x}"), \
+             patch("shared_memory_gateway.cli.subprocess.run") as run:
+            run.return_value.returncode = 0
+            first = setup("opencode", workspace, project)
+            note = Path(first["project_note"])
+            note.write_text("# Confirmed context\n", encoding="utf-8")
+            second = setup("codex", workspace, project)
+        self.assertTrue(second["workspace_reused"])
+        self.assertEqual(first["config"], second["config"])
+        self.assertEqual("# Confirmed context\n", note.read_text(encoding="utf-8"))
+        self.assertEqual(["/usr/bin/codex", "mcp", "add", "shared-memory-gateway", "--"],
+                         run.call_args.args[0][:5])
+
+    def test_setup_rejects_workspace_initialized_for_another_project(self):
+        first_project = self.root / "first"
+        second_project = self.root / "second"
+        first_project.mkdir()
+        second_project.mkdir()
+        workspace = self.root / "workspace"
+        first = initialize(workspace, first_project)
+        original_config = Path(first["config"]).read_bytes()
+        with patch("shared_memory_gateway.cli.subprocess.run") as run:
+            self.assert_code("WORKSPACE_MISMATCH", lambda: setup("codex", workspace, second_project))
+            run.assert_not_called()
+        self.assertEqual(original_config, Path(first["config"]).read_bytes())
+
+    def test_setup_reports_partial_registration_failure(self):
+        project = self.root / "project"
+        project.mkdir()
+        workspace = self.root / "workspace"
+        with patch("shared_memory_gateway.cli.shutil.which", return_value="/usr/bin/codex"), \
+             patch("shared_memory_gateway.cli.subprocess.run") as run:
+            run.return_value.returncode = 1
+            self.assert_code("CLIENT_SETUP_FAILED", lambda: setup("codex", workspace, project))
+            self.assertEqual("--", run.call_args.args[0][4])
+        self.assertTrue((workspace / "memory.local.json").is_file())
+
+    def test_setup_cli_reports_registered_without_claiming_model_tool_use(self):
+        project = self.root / "project"
+        project.mkdir()
+        workspace = self.root / "workspace"
+        with patch("shared_memory_gateway.cli.shutil.which", return_value="/usr/bin/opencode"), \
+             patch("shared_memory_gateway.cli.subprocess.run") as run, \
+             patch("sys.argv", ["shared-memory", "setup", "--client", "opencode",
+                                "--directory", str(workspace), "--project-root", str(project)]), \
+             patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            from shared_memory_gateway.cli import main
+
+            run.return_value.returncode = 0
+            main()
+        output = json.loads(stdout.getvalue())
+        self.assertEqual("registered", output["status"])
+        self.assertIn("model tool use not yet checked", output["verified"])
 
     def test_two_process_writers_one_wins_one_conflicts(self):
         proposals = [self.proposal("writer-A"), self.proposal("writer-B")]
