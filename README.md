@@ -34,31 +34,7 @@ factual quality. This project adds a small write boundary and reproducible tests
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    R[Client rules / optional hooks guide tool use]
-    subgraph P1[OpenCode connection]
-        A[OpenCode agent] --> S1[MCP stdio server process with core]
-    end
-    subgraph P2[Codex connection]
-        B[Codex agent] --> S2[MCP stdio server process with core]
-    end
-    subgraph P3[CLI process]
-        CLI[JSON CLI] --> K3[Core instance]
-    end
-    R -.-> A
-    R -.-> B
-    CFG[Local config: allowlist and project roots] --> S1
-    CFG --> S2
-    CFG --> K3
-    S1 -->|read / validate / apply| V[(Canonical Markdown: personal and project context)]
-    S2 -->|read / validate / apply| V
-    K3 -->|read / validate / apply| V
-    S1 <-->|flock| L[(Shared state: empty lock files)]
-    S2 <-->|flock| L
-    K3 <-->|flock| L
-    E[Human editor, e.g. Obsidian] <-->|direct file edits| V
-```
+![Architecture: independent client processes share canonical Markdown, config and locks; corrections read, propose and recheck before applying](docs/assets/context-architecture.svg)
 
 Each connected client launches its own MCP stdio server process, with its own
 core instance. Other MCP clients can use the adapter but have not been validated.
@@ -112,37 +88,10 @@ dependency.
    `forget` uses the same exact-passage update path and cannot erase Git history,
    backups or past model conversations.
 
-```mermaid
-sequenceDiagram
-    participant A as Agent A
-    participant S1 as A's MCP and core
-    participant F as Shared Markdown
-    participant S2 as B's MCP and core
-    participant B as Agent B
-    A->>S1: read(topic)
-    S1->>F: Read current bytes
-    S1-->>A: Content + revision r1
-    A->>S1: propose_update(r1, old, new, reason, source)
-    S1->>F: Check revision and unique target
-    S1-->>A: Proposal + diff, no content write
-    Note over A: Review meaning and diff under client policy
-    A->>S1: apply_update(proposal)
-    Note over S1,F: Acquire shared per-file lock and recheck revision
-    alt Current revision still r1
-        S1->>F: Temporary file + final check + atomic replace
-        S1-->>A: Updated revision r2
-    else Stale revision
-        S1-->>A: VERSION_CONFLICT, reread and reconcile
-    end
-    B->>S2: read(topic)
-    S2->>F: Read current bytes
-    S2-->>B: Current content + revision
-```
-
-Both core instances read the same files; there is no central daemon. Atomic
-replacement prevents partial file contents;
-the final external-edit check is best effort. A failure after replacement can
-return `WRITE_UNCERTAIN`, so read the file before deciding whether to retry.
+Each core instance reads the same files; there is no central daemon. Atomic
+replacement prevents partial file contents; the final external-edit check is
+best effort. A failure after replacement can return `WRITE_UNCERTAIN`, so read
+the file before deciding whether to retry.
 
 This is a **file-first, local single-user design**, not an automatic fact
 extractor or an agent runtime. MCP makes operations available; it does not
@@ -165,8 +114,9 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 - Explicit project-root mapping; unmatched/ambiguous projects are not guessed.
 - Exact passage deletion, without keeping a second note history in service state.
 - Optional MCP SDK adapter with six tools.
-- Synthetic model-session acceptance: Codex applied a reviewed correction through MCP;
-  a fresh OpenCode session read the corrected context (see [validation](docs/VALIDATION.md)).
+- Synthetic cross-agent model-session acceptance: OpenCode read `pending`; Codex
+  read, previewed and applied `verified`; a fresh OpenCode session read `verified`
+  through MCP (see [validation](docs/VALIDATION.md)).
 
 ## Not implemented
 
@@ -181,79 +131,71 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 ## Quick start
 
-Python 3.11+ on macOS or Linux. From a local checkout:
+Python 3.11+ on macOS or Linux. The first run uses temporary directories for
+both the project and its context. Nothing is imported from your own notes.
 
-```bash
-git clone https://github.com/boyceyuan/shared-memory-gateway.git
-cd shared-memory-gateway
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[mcp]'
-.venv/bin/shared-memory init --project-root /absolute/path/to/your/project
-```
+1. Install and initialize a disposable workspace:
 
-Use the generated `opencode_v2_config` in an OpenCode V2 `opencode.json(c)`, or
-execute the generated `codex_mcp_add` command for Codex. Other clients may accept
-the generated `mcp_config` (`mcpServers`) object. Restart the client and ask it
-to call `bootstrap` for your project.
-The command below verifies the project code, not that an agent app has been configured.
+   ```bash
+   git clone https://github.com/boyceyuan/shared-memory-gateway.git
+   cd shared-memory-gateway
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -e '.[mcp]'
+   DEMO_DIR="$(mktemp -d)"
+   PROJECT_ROOT="$DEMO_DIR/project"
+   WORKSPACE="$DEMO_DIR/context-workspace"
+   CONFIG="$WORKSPACE/memory.local.json"
+   mkdir "$PROJECT_ROOT"
+   .venv/bin/shared-memory init --directory "$WORKSPACE" --project-root "$PROJECT_ROOT"
+   ```
+
+2. Add a synthetic marker to the new project note and check the local read path.
+   `bootstrap` should return `status: matched` and
+   `entries: ["projects/current-project.md"]`; `read` should return the marker
+   and a revision. This edits only the newly created context workspace.
+
+   ```bash
+   printf '\nStatus: pending. (synthetic quick-start marker)\n' >> "$WORKSPACE/context/projects/current-project.md"
+   printf '{"project_root":"%s"}\n' "$PROJECT_ROOT" | .venv/bin/shared-memory bootstrap --config "$CONFIG"
+   printf '%s\n' '{"note":"projects/current-project.md"}' | .venv/bin/shared-memory read --config "$CONFIG"
+   ```
+
+3. Connect a client to **that same config**. For Codex, run:
+
+   ```bash
+   codex mcp add shared-memory-gateway -- "$PWD/.venv/bin/python" -m shared_memory_gateway.server --config "$CONFIG"
+   ```
+
+   For OpenCode V2, merge the `opencode_v2_config` object printed by `init` into
+   `opencode.json(c)`; do not use its generic `mcp_config` object. See
+   [MCP integration](#mcp-integration) for the exact format. Restart the chosen
+   client in `PROJECT_ROOT` and ask it to call `bootstrap` with that absolute
+   path, then `read("projects/current-project.md")`. Confirm it returns the
+   synthetic marker from step 2. **CLI read proves the local workspace works;
+   an agent tool call proves that client's MCP connection works.**
+
+The [model-session validation](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
+records how the separate Codex → OpenCode correction/read test was run and what
+it did not verify. Startup retrieval without a prompt is not yet validated.
+For lasting use, initialize a **new** directory with your actual project root
+(for example, omit `--directory` to use `~/.shared-memory-gateway/`), then point
+your client at that workspace's config. The initializer refuses existing paths;
+replace the synthetic marker before retaining any demo context.
+`codex mcp add` registers a client setting; after a temporary trial, run
+`codex mcp remove shared-memory-gateway` before discarding the demo directory.
+
+To reproduce the project's code-level checks independently:
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python scripts/verify_mcp.py
 ```
 
-Optional `uv` equivalent: `uv sync --extra mcp` and `uv run python scripts/verify_mcp.py`.
-
-Initialization creates a private `~/.shared-memory-gateway/` context workspace by
-default and prints its config path plus the MCP server command. Use `--directory`
-to choose another location. It refuses an existing target. Review the generated
-personal/project context templates, then use the generated configuration for your
-client. OpenCode V2 uses `mcp.servers`, not `mcpServers`; changing the outer key
-alone is insufficient because its local `command` is an array with `type: local`.
-The initializer does not edit client settings. Direct JSON output is also available
-from Python as `shared_memory_gateway.cli.initialize(...)`.
-For clients using the common `mcpServers` shape, the generated entry can be merged
-with existing MCP settings. Agent apps and runtime dependencies are installed
-separately.
-
-Create a portable workspace without machine-specific project mapping by omitting
-`--project-root`. To move it to another machine, initialize a fresh destination
-workspace with that machine's checkout path, then copy the context Markdown into
-its `context/` directory. Alternatively, update the absolute project root in the
-local config. The context Markdown can be copied or versioned independently;
-`memory.local.json` and `.state/` are machine-local and ignored. `init` refuses
-existing targets; it never overwrites context during migration.
-The initializer creates private directories/files on POSIX systems; store the
-workspace in a location covered by your own backups. `--project-root` must point
-to the project whose context you want to load, not this gateway's checkout. Omit
-it for a personal-only workspace.
-
-Read a bundled example context:
-
-```bash
-echo '{"note":"demo.md"}' | .venv/bin/shared-memory read --config examples/memory.json
-```
-
-Demonstrate correction using the core:
-
-```python
-from shared_memory_gateway.core import Memory
-
-memory = Memory("examples/memory.json")
-before = memory.read("demo.md")
-proposal = memory.propose_update(
-    note="demo.md", expected_revision=before["revision"],
-    old="Status: pending", new="Status: verified",
-    reason="Replace the previous status, do not add another status",
-    source="Synthetic verification",
-)
-print(proposal["diff"])       # preview does not modify the note
-memory.apply_update(proposal) # apply only if the caller's policy permits it
-```
-
-Running this changes the example file. To experiment repeatedly, copy the examples
-to a disposable directory first. Automated tests create and clean up their own
-temporary context workspaces and do not touch the bundled examples or personal data.
+These checks use synthetic fixtures; they do not configure an agent. `init`
+prints its generated paths and client config as JSON. Omit `--project-root` for
+personal-only context. For migration, initialize on the destination machine with its project
+path and copy only the context Markdown into the new workspace. The generated
+`memory.local.json` and `.state/` are machine-local. Keep your own backups.
 
 ## Context workspace configuration
 
@@ -331,21 +273,30 @@ behavior, scope and client integration. This README also draws on the
 [Hindsight README](https://github.com/vectorize-io/hindsight#readme)'s separation
 of concepts, operations and integrations, and
 [OpenLore](https://github.com/aakarim/OpenLore#readme)'s explanation of read/write
-ownership. The diagrams above describe this repository's implementation.
+ownership. The diagram above describes this repository's implementation.
 
 ## Roadmap / Development plan
 
-This is a proposed, validation-gated roadmap, not a delivery commitment. Items
-remain **planned** until implemented, tested, and reflected in the status above.
+The cross-client baseline below is complete. The remaining stages are
+validation-gated plans, not delivery commitments.
 
-### P0 — Validate real client workflows
+### Completed baseline — Cross-client correction and read
 
-- Extend the completed Codex → OpenCode model-session correction/read check with
-  startup retrieval without prompting, project switching, stale-write handling,
-  and recovery after context compaction.
-- Document per-client MCP setup and lifecycle hooks only after verifying them.
-- Acceptance: cross-client reads and corrections work; unsupported hooks and
-  model-level limitations are explicitly documented; no production vault is used.
+- On isolated synthetic context, OpenCode and Codex model sessions called the
+  MCP tools. Codex revised a prior status after reviewing the diff, and a new
+  OpenCode session read the revised status. This verifies cross-client tool use
+  and write visibility, **not** automatic lifecycle behavior; see
+  [validation](docs/VALIDATION.md) for the exact scope and Codex approval policy.
+
+### P0 — Validate client lifecycle and scope
+
+- Test automatic retrieval at session start without an explicit tool-use prompt,
+  project switching with distinct synthetic contexts, stale-write reconciliation
+  by the model, and retrieval after compaction. Fresh-session reading with an
+  explicit tool-use prompt is already covered by the baseline above.
+- Document client-specific MCP setup and lifecycle hooks only where observed.
+- Acceptance: record the actual tool calls and content for each scenario, including
+  failures and unsupported hooks; do not use production context.
 
 ### P1 — Harden file updates
 

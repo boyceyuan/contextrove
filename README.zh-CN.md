@@ -31,31 +31,7 @@ CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可�
 
 ## 整体架构
 
-```mermaid
-flowchart TB
-    R[客户端规则／可选 Hook 指导工具调用]
-    subgraph P1[OpenCode 接入]
-        A[OpenCode Agent] --> S1[独立 MCP stdio 服务进程及核心]
-    end
-    subgraph P2[Codex 接入]
-        B[Codex Agent] --> S2[独立 MCP stdio 服务进程及核心]
-    end
-    subgraph P3[CLI 进程]
-        CLI[JSON CLI] --> K3[核心实例]
-    end
-    R -.-> A
-    R -.-> B
-    CFG[本机配置：白名单与项目根路径] --> S1
-    CFG --> S2
-    CFG --> K3
-    S1 -->|读取／校验／写入| V[(规范 Markdown：个人与项目上下文)]
-    S2 -->|读取／校验／写入| V
-    K3 -->|读取／校验／写入| V
-    S1 <-->|flock| L[(共享状态：空锁文件)]
-    S2 <-->|flock| L
-    K3 <-->|flock| L
-    E[人工编辑器，如 Obsidian] <-->|直接编辑文件| V
-```
+![整体架构：各客户端连接独立的 MCP 进程，共用规范 Markdown、本机配置和锁目录；修订经过读取、预览和版本复核](docs/assets/context-architecture.zh-CN.svg)
 
 每个已接入的客户端各自启动 MCP stdio 进程，并持有独立核心实例；其他 MCP 客户端
 也可接入同一适配器，但尚未验收。CLI 使用相同的
@@ -97,34 +73,7 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
    必须重新读取并协调，不能盲目重试。`forget` 沿用精确段落更新流程，无法抹除
    Git 历史、备份或既往模型会话。
 
-```mermaid
-sequenceDiagram
-    participant A as Agent A
-    participant S1 as A 的 MCP 与核心
-    participant F as 共享 Markdown
-    participant S2 as B 的 MCP 与核心
-    participant B as Agent B
-    A->>S1: read(topic)
-    S1->>F: 读取当前字节
-    S1-->>A: 正文 + 版本 r1
-    A->>S1: propose_update(r1, old, new, reason, source)
-    S1->>F: 校验版本和唯一匹配
-    S1-->>A: 提案 + diff，不写正文
-    Note over A: 按客户端政策审阅语义与差异
-    A->>S1: apply_update(proposal)
-    Note over S1,F: 获取共享逐文件锁，重新校验版本
-    alt 当前版本仍为 r1
-        S1->>F: 临时文件 + 最终检查 + 原子替换
-        S1-->>A: 新版本 r2
-    else 版本过期
-        S1-->>A: VERSION_CONFLICT，重新读取与协调
-    end
-    B->>S2: read(topic)
-    S2->>F: 读取当前字节
-    S2-->>B: 当前正文 + 版本
-```
-
-两个核心实例读取同一份文件，不存在中央常驻服务。原子替换避免
+各核心实例读取同一份文件，不存在中央常驻服务。原子替换避免
 半写入正文，最终外部编辑检查属于尽力检测；替换后发生故障可能返回
 `WRITE_UNCERTAIN`，应先读回文件，再决定如何重试。
 
@@ -162,72 +111,64 @@ sequenceDiagram
 
 ## 快速开始
 
-macOS／Linux，Python 3.11+。先克隆项目：
+macOS／Linux，Python 3.11+。首次运行使用临时项目和临时上下文目录，不导入已有笔记。
 
-```bash
-git clone https://github.com/boyceyuan/shared-memory-gateway.git
-cd shared-memory-gateway
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[mcp]'
-.venv/bin/shared-memory init --project-root /absolute/path/to/your/project
-```
+1. 安装并初始化隔离工作区：
 
-OpenCode V2 使用 `init` 输出的 `opencode_v2_config` 合并到 `opencode.json(c)`；
-Codex 可执行输出的 `codex_mcp_add` 命令；其他支持 `mcpServers` 的客户端使用
-`mcp_config`。重启客户端后，让它针对目标项目调用 `bootstrap`。下面的命令只验证
-项目代码，不代表 Agent 应用已经接好。
+   ```bash
+   git clone https://github.com/boyceyuan/shared-memory-gateway.git
+   cd shared-memory-gateway
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -e '.[mcp]'
+   DEMO_DIR="$(mktemp -d)"
+   PROJECT_ROOT="$DEMO_DIR/project"
+   WORKSPACE="$DEMO_DIR/context-workspace"
+   CONFIG="$WORKSPACE/memory.local.json"
+   mkdir "$PROJECT_ROOT"
+   .venv/bin/shared-memory init --directory "$WORKSPACE" --project-root "$PROJECT_ROOT"
+   ```
+
+2. 在新建项目笔记里写入合成标记，再验证本地读取。`bootstrap` 应返回
+   `status: matched`，`entries` 中包含 `projects/current-project.md`；`read`
+   应返回标记与版本号。这里只修改刚创建的上下文工作区。
+
+   ```bash
+   printf '\nStatus: pending. (synthetic quick-start marker)\n' >> "$WORKSPACE/context/projects/current-project.md"
+   printf '{"project_root":"%s"}\n' "$PROJECT_ROOT" | .venv/bin/shared-memory bootstrap --config "$CONFIG"
+   printf '%s\n' '{"note":"projects/current-project.md"}' | .venv/bin/shared-memory read --config "$CONFIG"
+   ```
+
+3. 将客户端接到**同一份配置**。Codex 可直接执行：
+
+   ```bash
+   codex mcp add shared-memory-gateway -- "$PWD/.venv/bin/python" -m shared_memory_gateway.server --config "$CONFIG"
+   ```
+
+   OpenCode V2 则将 `init` 输出的 `opencode_v2_config` 合并到 `opencode.json(c)`，
+   不要使用通用 `mcp_config`；格式见 [MCP 接入](#mcp-接入)。在 `PROJECT_ROOT`
+   中重启所选客户端，让它以该绝对路径调用 `bootstrap`，再调用
+   `read("projects/current-project.md")`，核对是否读到第 2 步的合成标记。
+   **CLI 读取证明本机工作区可用，Agent 调用工具才证明该客户端的 MCP 接入可用。**
+
+此前 Codex → OpenCode 跨客户端修订／读取的实际过程和边界见
+[模型会话验证](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)。
+无提示启动自动读取仍未验收。正式使用时用真实项目根路径初始化**新目录**（例如不传
+`--directory`，使用默认的 `~/.shared-memory-gateway/`），再将客户端指向该工作区
+配置。初始化器遇到已存在的目标路径会拒绝使用；保留演示上下文前须替换合成标记。
+`codex mcp add` 会注册客户端配置；试用后丢弃临时目录前，运行
+`codex mcp remove shared-memory-gateway` 清理该入口。
+
+独立复现代码层测试：
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python scripts/verify_mcp.py
 ```
 
-可选 `uv` 命令：`uv sync --extra mcp`，然后运行
-`uv run python scripts/verify_mcp.py`。
-
-初始化默认在 `~/.shared-memory-gateway/` 创建私有上下文工作区，并打印配置路径和
-MCP 服务命令。可用 `--directory` 指定位置；目标路径已存在时会拒绝使用。检查生成的
-个人／项目上下文模板后，选择对应客户端的配置。OpenCode V2 使用 `mcp.servers`，
-仅修改 `mcpServers` 外层名称并不够：它还要求 `type: local` 和命令数组。
-初始化器不会改写客户端设置。也可以在 Python 中
-调用 `shared_memory_gateway.cli.initialize(...)` 获取结构化配置。
-使用通用 `mcpServers` 配置结构的客户端可合并生成的条目。Agent 应用及运行时
-依赖仍需单独安装。
-
-创建不绑定具体项目路径的可迁移个人上下文工作区时，可省略 `--project-root`。
-在不同机器间迁移时，先在目标机器用当地 checkout 路径初始化一个新的工作区，然后将
-Markdown 上下文复制到新工作区的 `context/`；或者修改本机配置中的绝对项目根路径。
-`memory.local.json` 与 `.state/` 是本机配置／状态，应忽略或在目标机器重新生成。
-`init` 遇到已存在的目标路径会拒绝使用，迁移时不会覆盖既有上下文。项目根路径因机器而异，
-在目标机器运行 `init --project-root` 注册当地 checkout。POSIX 初始化器会为工作区和上下文文件设置
-仅当前用户可访问的权限；请将工作区放在你自己的备份范围内。`--project-root` 应指向
-要加载项目上下文的目标项目，而不是本 Gateway 仓库；仅创建个人上下文时可省略。
-
-读取项目自带的合成项目上下文：
-
-```bash
-echo '{"note":"demo.md"}' | .venv/bin/shared-memory read --config examples/memory.json
-```
-
-使用核心接口演示如何修订旧结论：
-
-```python
-from shared_memory_gateway.core import Memory
-
-memory = Memory("examples/memory.json")
-before = memory.read("demo.md")
-proposal = memory.propose_update(
-    note="demo.md", expected_revision=before["revision"],
-    old="Status: pending", new="Status: verified",
-    reason="替换旧状态，不再追加一个状态",
-    source="合成验证",
-)
-print(proposal["diff"])       # 只预览，不修改笔记
-memory.apply_update(proposal) # 仅在调用方政策允许时应用
-```
-
-该示例会修改项目自带文件。反复试验前请先将 `examples` 复制到临时目录。
-自动化测试会自行创建并清理临时上下文工作区，不会触碰项目样例或个人数据。
+测试使用合成样例，不配置 Agent。`init` 会以 JSON 输出生成的路径与客户端配置。
+仅记录个人上下文时省略 `--project-root`。迁移到另一台机器时，在目标机器用其项目路径重新初始化，再仅将
+上下文 Markdown 复制到新工作区；`memory.local.json` 与 `.state/` 属于本机配置
+与状态。请自行备份。
 
 ## 上下文工作区配置
 
@@ -295,20 +236,26 @@ Agent 应用或修改客户端配置。
 Basic Memory、MCP Memory Server、OpenLore、Mem0 和 Letta。本 README 的组织还
 参考了 [Hindsight README](https://github.com/vectorize-io/hindsight#readme) 对概念、
 操作与接入的分层说明，以及 [OpenLore](https://github.com/aakarim/OpenLore#readme)
-对读写归属的解释；上方图表描述的是本仓库的实际实现。
+对读写归属的解释；上方图示描述的是本仓库的实际实现。
 
 ## 后续方向与开发计划
 
-这是一个**按验证结果推进的建议路线图**，不是交付承诺。功能只有在实现、测试，
-并同步更新上方状态后，才算完成。
+下方跨客户端验证基线已完成；后续各阶段是按验证结果推进的计划，不是交付承诺。
 
-### P0：验证真实客户端工作流
+### 已完成基线：跨客户端修订与读取
 
-- 在已完成的 Codex → OpenCode 模型会话修订与读取测试基础上，继续验证未提示时的
-  启动读取、项目切换、模型处理旧版本冲突，以及上下文压缩后的恢复。
-- 逐个验证客户端的 MCP 配置与生命周期 Hook 后，再编写对应接入说明。
-- 验收标准：跨客户端读取与修订有效；明确记录不支持的 Hook 和模型级限制；不使用
-  生产笔记库做测试。
+- 隔离合成库中，OpenCode 与 Codex 模型会话实际调用 MCP 工具；Codex 审阅差异并
+  修订旧状态，全新 OpenCode 会话读取到新状态。这证明跨客户端工具调用与写入可见，
+  **不证明**自动生命周期行为；具体范围和 Codex 审批条件见[验证记录](docs/VALIDATION.md)。
+
+### P0：验证客户端生命周期与项目范围
+
+- 分别测试无显式工具提示时的会话启动主动读取、不同合成项目之间的切换、模型处理
+  旧版本冲突，以及压缩后的重新读取。新会话在明确提示调用工具后的读取已纳入上述
+  验证基线。
+- 仅在实际观察到支持后编写各客户端的 MCP 接入与生命周期 Hook 说明。
+- 验收标准：逐项记录实际工具调用与读到的内容，包括失败和不支持的 Hook；
+  不使用生产上下文。
 
 ### P1：加强文件更新可靠性
 
