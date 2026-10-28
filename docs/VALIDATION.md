@@ -150,8 +150,67 @@ The `demo` command uses a disposable synthetic project and workspace. It reads
 fresh core instance; the temporary workspace is removed. This is a local-core
 check, not a model session or MCP protocol check.
 
-The `setup` tests cover registering OpenCode globally and Codex through their
-CLI argument shapes, reusing the same project's existing notes, refusing an
-unrelated directory or missing client, and reporting a partial registration
-failure. Client commands are mocked in these tests: they do not establish that
-either installed client connects, calls tools, or reads context automatically.
+The MCP `setup` tests cover registering OpenCode globally and Codex through
+their CLI argument shapes. Client commands are mocked and do not establish
+connection or model behavior.
+
+## Skill-first validation (2026-10-28)
+
+The implementation tests cover shared personal context across projects,
+idempotent installation, refusal to overwrite a different Skill, safe handling
+of conflicting project names and overlapping roots, atomic config publication,
+retry after injected failure, shell-quoted installation paths, live CLI actions,
+and stale revision rejection. They use synthetic temporary workspaces.
+
+The completed local suite has **40 passing tests** on macOS arm64 / Python
+3.13.18. It also verifies that propose/apply reject a missing `--new` with a
+structured `INVALID_REQUEST`, leave the note unchanged, and allow explicit forget.
+
+`scripts/verify_skills.py --codex <path> --opencode <path>` runs in temporary
+HOME/XDG/CODEX directories, with no provider credentials and no model calls. It
+uses Codex 0.165.0's app-server `skills/list` and OpenCode 2.2.0's isolated API
+skill list. The observed results were:
+
+| Client | Discovery result |
+|---|---|
+| Codex 0.165.0 | Pass: `shared-context` returned enabled with the installed path |
+| OpenCode 2.2.0, documented global `~/.agents/skills` | Not discovered by isolated API query |
+| OpenCode 2.2.0, documented `~/.config/opencode/skills` | Not discovered by isolated API query |
+| OpenCode 2.2.0, explicit project `skills` source | Not discovered by isolated API query |
+
+The 2026-10-28 rerun confirmed that each OpenCode query returned the requested
+synthetic project location and that `/api/config` loaded the explicit `skills`
+source. Its Skill list was still empty. This rules out querying the wrong
+location or silently missing that config in this probe; it does not establish
+the cause of the missing registration or certify the TUI behavior.
+
+The OpenCode probe is a negative discovery observation in this CLI/API setup,
+not proof its TUI cannot load the compatibility path. Therefore the README's
+shared-directory claim is documented as a client-version caveat rather than
+passing cross-client acceptance. Neither client was asked to run Skill instructions or invoke the
+CLI through a model. Actual Skill-guided execution, automatic task-start reads,
+project switching, edits and compaction recovery remain unverified.
+
+## Distribution checks (2026-10-28)
+
+Local checks passed with Ruff 0.17.3 and build 1.6.1:
+
+```bash
+python -m ruff check .
+python -m build
+python scripts/verify_distribution.py dist/*.whl
+python scripts/verify_mcp.py
+```
+
+The build creates an sdist, then builds the wheel from that sdist. The packaged
+Skill is included in both; the sdist also includes the architecture SVGs linked
+by the READMEs. The distribution check installs the wheel without dependencies
+in a fresh venv outside the checkout, removes inherited Python import overrides,
+and runs Skill setup with a quoted workspace path. It exercises bootstrap, read,
+non-mutating preview, apply, stale-revision rejection, search, forget and the demo.
+It uses disposable synthetic context and never installs into a global Skill path.
+
+The two-session MCP protocol check passed again after these changes. These
+checks establish package contents and local CLI/protocol behavior, not Skill
+execution by a model. CI includes lint/build/wheel checks in addition to the
+macOS/Linux Python 3.11/3.13 test matrix; remote results must be checked separately.
