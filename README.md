@@ -13,6 +13,8 @@ The core has no runtime dependencies, model calls, telemetry, or vector database
 
 [Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md) · [Name and design](docs/DESIGN_REVIEW.md)
 
+[Client compatibility and install paths](docs/CLIENTS.md) · [Reusable methods and SOPs](#from-context-to-reusable-working-methods)
+
 [Quick start](#quick-start) · [Architecture](#architecture) · [Skill workflow](#skill-workflow) · [CLI and MCP](#cli-and-mcp-integration) · [Roadmap](#roadmap--development-plan)
 
 > **Alpha / proof of concept.** The caller performs semantic synthesis. This is
@@ -112,6 +114,8 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 - `shared-memory agent` exposes argument-based bootstrap, read, search, propose,
   apply and forget actions for Skill workflows. `setup --client skill` safely
   reuses one workspace across non-overlapping projects.
+- Multi-client Skill installation with repeatable `--agent`, user/project scope,
+  conflict preflight and a read-only `skill doctor`. See the [compatibility matrix](docs/CLIENTS.md).
 - Exact allowlisted UTF-8 Markdown files; no recursive vault crawling.
 - Raw-byte SHA-256 revisions, diff previews and exact single-passage replacements.
 - Cross-process POSIX `flock`, atomic replacement and best-effort external-edit checks.
@@ -151,12 +155,14 @@ Still in this checkout, install the shared Skill and create its local context
 workspace (replace the one absolute project path):
 
 ```bash
-.venv/bin/shared-memory setup --client skill --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
+.venv/bin/shared-memory setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
 `setup --client skill` creates the selected workspace (default
 `~/.shared-memory-gateway/`) and installs `shared-context` under
-`~/.agents/skills/`. Edit the printed personal/project note paths. Start a
+`~/.agents/skills/` for Codex. Choose another `--agent` from the
+[compatibility matrix](docs/CLIENTS.md); omit it only for clients that read the
+default `.agents/skills` directory. Edit the printed personal/project note paths. Start a
 **new** client session and ask it to use the `shared-context` skill. The Skill
 then calls the CLI to bootstrap
 the current project and read the matched note. Installing instructions is not
@@ -176,6 +182,31 @@ For an existing configured workspace, run
 adds `shared-context/SKILL.md` beneath it. The Skill binds absolute CLI/workspace
 paths. Moving the installation requires reviewing/removing that generated Skill
 and reinstalling it; a different existing Skill is rejected rather than updated.
+
+### Install for multiple local clients
+
+```bash
+.venv/bin/shared-memory skill clients
+.venv/bin/shared-memory skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/shared-memory skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+```
+
+Use `--scope project --project-root /absolute/path/to/project` on setup/install/doctor
+to select project-local Skill paths. This chooses where the Skill is installed;
+it does not restrict access to only that project's notes. Every installation
+uses the same workspace. Duplicate selections are deduplicated, and shared
+paths are safely reused. `--skill-home` overrides exactly one selected agent's
+Skill directory. WorkBuddy requires this explicit override.
+
+All known destination conflicts are checked before setup changes the workspace.
+An I/O failure during installation can leave earlier targets installed or an
+incomplete target; `INSTALL_PARTIAL` reports the failed path. Run doctor, inspect
+the path and preserve any user edits before retrying. Doctor only compares local
+files and checks for a basic workspace config; it does not start clients, validate
+all config semantics, grant trust, or certify model behavior.
+
+Generated Skills contain absolute local CLI/workspace paths. Keep those files
+out of shared Git commits and cloud agents; regenerate separately on each machine.
 
 ### Optional MCP integration
 
@@ -217,6 +248,21 @@ ran. Codex and OpenCode V2 documentation list the shared `~/.agents/skills`
 location. Client/version evidence and any discovery limitations are recorded in
 [validation](docs/VALIDATION.md#skill-first-validation-2026-10-28). Other agents
 may require a different installation path.
+
+## From context to reusable working methods
+
+The longer-term goal includes carrying a person's judgment and business SOPs
+between agents. Keep the canonical method beside its domain knowledge: inputs,
+decision criteria, tradeoffs, exceptions, outputs, acceptance criteria and sources.
+An agent can draft a portable Skill that references that source, then refine it
+through real tasks and user corrections. Distinguish a candidate method, a Skill
+draft, an installed Skill and behavior actually validated in a client.
+
+Today the package ships and installs the `shared-context` maintenance workflow.
+It does not automatically learn habits, generate business Skills, install arbitrary
+Skill bundles, or train a personal agent. Shared knowledge and the workflow are
+the foundation; method extraction and per-client execution validation remain
+explicit future work. A Skill never grants authority beyond the user's task.
 
 ## Context workspace configuration
 

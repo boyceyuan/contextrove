@@ -214,3 +214,22 @@ The two-session MCP protocol check passed again after these changes. These
 checks establish package contents and local CLI/protocol behavior, not Skill
 execution by a model. CI includes lint/build/wheel checks in addition to the
 macOS/Linux Python 3.11/3.13 test matrix; remote results must be checked separately.
+
+## Multi-client installer (2026-10-29)
+
+The local suite now has **51 passing tests** on macOS arm64 / Python 3.13.18.
+The additional tests cover every automatic target in both scopes, duplicate
+selections and alias reuse, legacy custom destinations, OpenCode XDG handling,
+WorkBuddy's manual-only path, conflict preflight before workspace creation or
+project registration, non-UTF-8 conflicts, injected partial failure and explicit
+recovery, read-only doctor behavior, and the Skill/MCP option boundary.
+
+The fresh-wheel script also installs for three project-local clients, compares
+the rendered Skills, reruns installation and checks doctor output. No real client
+configuration or personal context is used. Ruff, sdist→wheel, fresh-wheel and
+two-session MCP checks passed locally. Client directory sources and the separate
+discovery/execution limits are listed in [CLIENTS.md](CLIENTS.md).
+
+This round validates installer behavior, not new model sessions or lifecycle
+hooks. WorkBuddy stays manual; CodeBuddy trust must be granted in the client.
+Remote CI for this change is reported separately from these local results.

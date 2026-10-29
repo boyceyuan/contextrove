@@ -46,6 +46,19 @@ def main():
         skill = Path(installed["skill"]).read_text(encoding="utf-8")
         assert "{{SHARED_MEMORY}}" not in skill and "{{WORKSPACE}}" not in skill
         assert shlex.quote(str(cli)) in skill
+        clients = invoke("skill", "clients")
+        assert {"codex", "claude-code", "cursor", "workbuddy"} <= {
+            item["id"] for item in clients["clients"]}, clients
+        options = ["--workspace", workspace, "--scope", "project", "--project-root", project,
+                   "--agent", "codex", "--agent", "claude-code", "--agent", "cline"]
+        installed_clients = invoke("skill", "install", *options)
+        assert len(installed_clients["installations"]) == 3, installed_clients
+        for item in installed_clients["installations"]:
+            assert Path(item["skill"]).read_text(encoding="utf-8") == skill, item
+        checked = invoke("skill", "doctor", *options)
+        assert all(item["file_status"] == "matches"
+                   and item["model_execution"] == "unverified" for item in checked["installations"]), checked
+        assert invoke("skill", "install", *options)["status"] == "reused"
         bootstrap = invoke("agent", "bootstrap", "--workspace", workspace,
                            "--project-root", project)
         assert bootstrap["status"] == "matched", bootstrap
@@ -73,6 +86,7 @@ def main():
         assert invoke("demo")["after"] == "verified"
         print(json.dumps({"wheel": wheel.name, "fresh_environment": "PASS",
                           "packaged_skill": "PASS", "cli_workflow": "PASS",
+                          "multi_client_install_and_doctor": "PASS",
                           "scope": "Synthetic local CLI; no agent model calls"}, indent=2))
 
 

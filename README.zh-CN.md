@@ -11,6 +11,8 @@
 
 [Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md) · [命名与设计](docs/DESIGN_REVIEW.zh-CN.md)
 
+[客户端兼容与安装路径](docs/CLIENTS.md) · [工作方法与业务 SOP](#从上下文到可复用工作方法)
+
 [快速开始](#快速开始) · [整体架构](#整体架构) · [Skill 工作流](#skill-工作流) · [CLI 与 MCP](#cli-与-mcp-接入) · [开发计划](#后续方向与开发计划)
 
 > **Alpha／概念验证。** 语义理解与知识整合由调用方负责。本项目不是自动记忆
@@ -103,6 +105,8 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 - `shared-memory agent` 提供面向 Skill 工作流的 bootstrap、read、search、propose、
   apply 与 forget 参数式命令。
 - `setup --client skill` 可在不重叠的多个项目间安全复用同一工作区。
+- 支持重复 `--agent` 的多客户端 Skill 安装、用户级／项目级作用域、冲突预检与只读
+  `skill doctor`；具体边界见[兼容矩阵](docs/CLIENTS.md)。
 
 ## 尚未实现
 
@@ -128,11 +132,13 @@ python3 -m venv .venv
 仍在 Gateway 仓库目录，安装共享 Skill 并创建本地工作区（替换为项目绝对路径）：
 
 ```bash
-.venv/bin/shared-memory setup --client skill --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
+.venv/bin/shared-memory setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
 `setup --client skill` 会创建指定工作区（默认 `~/.shared-memory-gateway/`），并将
-`shared-context` 安装到用户级 `~/.agents/skills/`。编辑输出的个人／项目笔记路径，
+`shared-context` 安装到 Codex 的用户级 `~/.agents/skills/`。其他客户端从
+[兼容矩阵](docs/CLIENTS.md) 选择 `--agent`；省略时仅适用于读取默认 `.agents/skills`
+目录的客户端。编辑输出的个人／项目笔记路径，
 启动一个**新**客户端会话，并要求它使用 `shared-context` Skill。Skill 会指导 Agent
 通过 CLI 定位当前项目并读取匹配笔记。安装指令不代表客户端已执行；请检查实际工具输出。
 已有工作区或 Skill 不会被覆盖。
@@ -147,6 +153,27 @@ python3 -m venv .venv
 `--skill-home /path/to/skills` 可指定其他发现目录，安装器会在其下创建 `shared-context/SKILL.md`。
 Skill 绑定本机 CLI 与工作区的绝对路径；移动安装后，需要检查并移除原生成 Skill 再安装，
 不同内容的已有 Skill 会被拒绝，不会自动更新。
+
+### 为多个本地客户端安装
+
+```bash
+.venv/bin/shared-memory skill clients
+.venv/bin/shared-memory skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/shared-memory skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+```
+
+setup／install／doctor 加上 `--scope project --project-root /absolute/path/to/project`
+可选择项目内的 Skill 目录。该选项决定安装位置，不限制只能访问该项目的笔记；各端使用
+同一个工作区。重复选择会去重，相同发现路径会复用。`--skill-home` 仅能覆盖一个选定
+客户端的 Skill 目录；WorkBuddy 必须显式提供这个路径。
+
+setup 修改工作区前会检查所有已知目标冲突。安装时的 I/O 故障可能留下已完成目标或不完整
+目录，`INSTALL_PARTIAL` 会给出失败路径。先运行 doctor、检查路径并保留用户修改，再重试。
+doctor 只比较本地文件和检查基础配置是否存在，不启动客户端、不验证全部配置语义、
+不代替客户端授予信任，也不证明模型已执行。
+
+生成 Skill 含本机 CLI／工作区绝对路径，应在每台机器分别生成，避免提交到共享 Git 或
+交给云端 Agent 使用。
 
 ### 可选 MCP 接入
 
@@ -186,6 +213,17 @@ Codex 与 OpenCode V2 文档均列出共享 `~/.agents/skills` 目录；各版�
 Codex CLI 0.165.0 的隔离 app-server Skill 列表发现测试通过。OpenCode CLI 2.2.0 的隔离 API
 测试没有发现共享目录、文档所列原生全局目录或显式项目 Skill 源；这是本次 CLI/API 探针的
 负向观察，不能据此断言 OpenCode TUI 不支持它们。OpenCode 的实际 Skill 引导执行仍待验证。
+
+## 从上下文到可复用工作方法
+
+长期目标还包括让工作判断与业务 SOP 能跨 Agent 延续。方法规范正文与领域知识一起维护，
+说明输入、判断依据、取舍、例外、产物、验收标准和来源。Agent 可据此形成引用正文的
+便携 Skill 草案，在真实任务和用户纠正中逐渐修订；候选方法、草案、已安装和客户端
+实际执行通过分别标注。
+
+当前安装器提供的是内置 `shared-context` 维护工作流，尚无自动习惯学习、业务 Skill
+生成、任意 Skill 包分发或个人 Agent 训练功能。共享知识与工作流为后续积累提供基础，
+方法提炼和各客户端行为验收仍需逐项推进；Skill 不扩大用户任务授权。
 
 ## 上下文工作区配置
 
