@@ -200,7 +200,7 @@ class MemoryTests(unittest.TestCase):
         skill = Path(output["skill"]).read_text(encoding="utf-8")
         self.assertTrue(output["skill"].endswith("shared-context/SKILL.md"))
         self.assertIn("name: shared-context", skill)
-        self.assertIn(str(Path(sys.executable).absolute().parent / "shared-memory"), skill)
+        self.assertIn(str(Path(sys.executable).absolute().parent / "contextrove"), skill)
         self.assertIn(str(workspace.resolve()), skill)
         self.assertNotIn("{{WORKSPACE}}", skill)
         self.assertEqual("reused", install_skill(workspace, skill_home)["status"])

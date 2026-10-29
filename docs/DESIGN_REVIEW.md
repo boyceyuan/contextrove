@@ -1,22 +1,29 @@
 # Name and design review
 
-Status: recommendation, not a rename or a feature claim. Reviewed 2026-10-27.
+Status: initial review 2026-10-27; naming updated 2026-10-29 for the rename branch.
 The product records personal and project context for reuse across agent clients.
 Markdown is the current canonical format, not the product category.
 
 ## Name
 
-**Recommendation: Shared Context** as the product-facing description; retain
-`shared-memory-gateway` as the repository, Python package and MCP server name for
-now. "Shared" identifies the cross-client use case, and "Context" covers both
-personal preferences and project knowledge without promising automatic recall.
-The phrase is descriptive rather than a distinct brand. A later public rename
-would need package/repository name checks and a compatibility plan; GitHub search
-alone is not a trademark or package-availability check.
+**Selected implementation name: ContextRove** (`contextrove`). Context describes
+the current personal/project knowledge; Rove expresses carrying it across tools.
+It leaves room for portable working methods and SOP Skills without promising
+automatic learning, a digital twin, or a general agent runtime. "Shared Context"
+remains a description of the use case.
+
+On 2026-10-29, GitHub repository search returned zero `contextrove` name matches;
+`boyceyuan/contextrove`, PyPI `/pypi/contextrove/json` and npm `/contextrove`
+returned 404. These observations are preliminary collision checks, not trademark
+clearance, a reserved package name or a published release. ContextPort,
+ContextWeft and Workweft have existing agent-related uses; Carrykit also has
+existing public uses. The [migration guide](MIGRATION.md) defines the identifiers
+that change and those retained for compatibility.
 
 | Candidate | Fit | Decision |
 |---|---|---|
-| Shared Memory Gateway | Accurate for the current local CLI/MCP access boundary, but "gateway" suggests a proxy or network edge; "memory" can imply automatic capture | Keep as the existing technical identifier, not the product promise |
+| ContextRove | Portable context across tools, with room for reusable methods | New product/distribution/primary CLI name |
+| Shared Memory Gateway | Describes the original CLI/MCP access boundary; "gateway" suggests a network proxy | Retain legacy command/module/config identifiers where compatibility requires them |
 | Shared Context | Describes cross-client personal/project context with few extra promises; generic phrase already used by other projects | Use as the product description, not a claim of exclusive naming |
 | Context Ledger | Suggests durable audit/history and often compaction tracking, neither implemented here | Do not adopt |
 | Context Anchor | Suggests session anchoring or automatic prompt injection, which the server cannot ensure | Do not adopt |

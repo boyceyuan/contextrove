@@ -36,10 +36,10 @@ support that directory. `skill clients` returns machine-readable paths and notes
 ## Examples / 示例
 
 ```bash
-shared-memory setup --client skill --agent codex --agent claude-code --directory /absolute/context --project-root /absolute/project
-shared-memory skill install --workspace /absolute/context --agent cursor --agent cline --scope project --project-root /absolute/project
-shared-memory skill doctor --workspace /absolute/context --agent cursor --agent cline --scope project --project-root /absolute/project
-shared-memory skill install --workspace /absolute/context --agent workbuddy --skill-home /confirmed/workbuddy/skills
+contextrove setup --client skill --agent codex --agent claude-code --directory /absolute/context --project-root /absolute/project
+contextrove skill install --workspace /absolute/context --agent cursor --agent cline --scope project --project-root /absolute/project
+contextrove skill doctor --workspace /absolute/context --agent cursor --agent cline --scope project --project-root /absolute/project
+contextrove skill install --workspace /absolute/context --agent workbuddy --skill-home /confirmed/workbuddy/skills
 ```
 
 `setup --client codex|opencode` retains its original meaning: **MCP registration**.

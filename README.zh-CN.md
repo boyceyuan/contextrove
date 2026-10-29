@@ -1,4 +1,4 @@
-# Shared Memory Gateway
+# ContextRove
 
 [English](README.md) | 简体中文
 
@@ -8,6 +8,9 @@
 本地文件读写能力和可复用 Skill 工作流；CLI 负责执行，MCP 是可选适配器。Markdown
 是当前可迁移、可人工检查的存储格式，不是项目目的本身。核心不调用模型、不发送遥测，
 也不要求向量数据库。
+
+原名 Shared Memory Gateway。ContextRove 表达上下文随你跨工具延续，工作方法和业务
+SOP 逐步积累为可复用 Skill；当前包交付共享上下文维护及其内置 Skill 工作流。
 
 [Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md) · [命名与设计](docs/DESIGN_REVIEW.zh-CN.md)
 
@@ -98,11 +101,11 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 - 可选 MCP SDK 适配器，暴露六个工具。
 - 已在隔离合成库完成模型级交叉验证：Codex 通过 MCP 审阅差异并修订，新的 OpenCode
   会话读取到修订内容；证据与边界见[验证记录](docs/VALIDATION.md)。
-- `shared-memory init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
+- `contextrove init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
   目标路径已存在时拒绝使用。
-- `shared-memory demo` 验证隔离的本地修订；`setup --client skill` 初始化工作区并安装
+- `contextrove demo` 验证隔离的本地修订；`setup --client skill` 初始化工作区并安装
   便携 Skill。
-- `shared-memory agent` 提供面向 Skill 工作流的 bootstrap、read、search、propose、
+- `contextrove agent` 提供面向 Skill 工作流的 bootstrap、read、search、propose、
   apply 与 forget 参数式命令。
 - `setup --client skill` 可在不重叠的多个项目间安全复用同一工作区。
 - 支持重复 `--agent` 的多客户端 Skill 安装、用户级／项目级作用域、冲突预检与只读
@@ -123,8 +126,8 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 macOS／Linux，Python 3.11+。先在仓库目录安装：
 
 ```bash
-git clone https://github.com/boyceyuan/shared-memory-gateway.git
-cd shared-memory-gateway
+git clone https://github.com/boyceyuan/contextrove.git
+cd contextrove
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
@@ -132,7 +135,7 @@ python3 -m venv .venv
 仍在 Gateway 仓库目录，安装共享 Skill 并创建本地工作区（替换为项目绝对路径）：
 
 ```bash
-.venv/bin/shared-memory setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
+.venv/bin/contextrove setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
 `setup --client skill` 会创建指定工作区（默认 `~/.shared-memory-gateway/`），并将
@@ -149,7 +152,7 @@ python3 -m venv .venv
 `bootstrap.entries` 返回值为准，不要假定项目 ID。
 
 已有配置工作区可执行
-`.venv/bin/shared-memory skill install --workspace /absolute/path/to/workspace`。
+`.venv/bin/contextrove skill install --workspace /absolute/path/to/workspace`。
 `--skill-home /path/to/skills` 可指定其他发现目录，安装器会在其下创建 `shared-context/SKILL.md`。
 Skill 绑定本机 CLI 与工作区的绝对路径；移动安装后，需要检查并移除原生成 Skill 再安装，
 不同内容的已有 Skill 会被拒绝，不会自动更新。
@@ -157,9 +160,9 @@ Skill 绑定本机 CLI 与工作区的绝对路径；移动安装后，需要检
 ### 为多个本地客户端安装
 
 ```bash
-.venv/bin/shared-memory skill clients
-.venv/bin/shared-memory skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
-.venv/bin/shared-memory skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/contextrove skill clients
+.venv/bin/contextrove skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/contextrove skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
 ```
 
 setup／install／doctor 加上 `--scope project --project-root /absolute/path/to/project`
@@ -181,13 +184,13 @@ doctor 只比较本地文件和检查基础配置是否存在，不启动客户�
 
 ```bash
 .venv/bin/python -m pip install -e '.[mcp]'
-.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+.venv/bin/contextrove setup --client opencode --project-root /absolute/path/to/your/project
 # 或 --client codex
 ```
 
 MCP 是另一种传输方式，不是 Skill 工作流的前置依赖。
 
-想先做无需客户端的自检，可在 Gateway 仓库运行 `.venv/bin/shared-memory demo`：
+想先做无需客户端的自检，可在仓库运行 `.venv/bin/contextrove demo`：
 它用自动清理的合成文件输出 `before: pending`、`after: verified` 和
 `fresh_read: PASS`，**仅验证本地核心**。
 此前的 [Codex → OpenCode 模型会话验证](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
@@ -245,9 +248,9 @@ Skill 通过参数式 CLI 调用本机核心。每个操作都要求已初始化
 并直接读取当前文件：
 
 ```bash
-shared-memory agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
-shared-memory agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
-shared-memory agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
+contextrove agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
+contextrove agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
+contextrove agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
 ```
 
 上面的 read／search 示例使用第一个项目的生成路径；其他项目应使用 bootstrap 返回的入口与唯一项目 ID。
@@ -305,7 +308,10 @@ Agent 应用或修改客户端配置。
 
 ## 命名与设计
 
-产品名仍在讨论中，已发布的技术标识保持 `shared-memory-gateway`。
+产品与 Python 分发包更名为 **ContextRove**（`contextrove`）。保留旧命令
+`shared-memory`／`shared-memory-mcp`、Python 模块 `shared_memory_gateway`、
+MCP 服务 ID `shared-memory-gateway`、默认工作区 `~/.shared-memory-gateway` 和
+Skill ID `shared-context` 以兼容已有配置。升级前参阅[迁移说明](docs/MIGRATION.md)。
 [设计对照](docs/DESIGN_REVIEW.zh-CN.md) 按存储、更新、作用域和客户端接入比较
 Basic Memory、MCP Memory Server、OpenLore、Mem0 和 Letta。本 README 的组织还
 参考了 [Hindsight README](https://github.com/vectorize-io/hindsight#readme) 对概念、

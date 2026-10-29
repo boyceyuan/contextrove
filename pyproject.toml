@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "shared-memory-gateway"
-version = "0.1.0"
-description = "A small file-first memory gateway for agents, with revision-checked Markdown updates."
+name = "contextrove"
+version = "0.2.0"
+description = "Portable personal and project context across coding agents, with reusable Skill workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -16,10 +16,16 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/boyceyuan/contextrove"
+Issues = "https://github.com/boyceyuan/contextrove/issues"
+
 [project.optional-dependencies]
 mcp = ["mcp>=1.20,<2"]
 
 [project.scripts]
+contextrove = "shared_memory_gateway.cli:main"
+contextrove-mcp = "shared_memory_gateway.server:main"
 shared-memory = "shared_memory_gateway.cli:main"
 shared-memory-mcp = "shared_memory_gateway.server:main"
 

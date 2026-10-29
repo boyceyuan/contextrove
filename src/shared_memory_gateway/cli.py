@@ -215,7 +215,7 @@ def _skill_target(workspace: Path, skill_home: str | Path | None) -> tuple[Path,
                    Path.home() / ".agents" / "skills") / "shared-context"
     destination = destination.absolute()
     # Prefer this Python environment over another installation on PATH.
-    command = Path(sys.executable).absolute().parent / "shared-memory"
+    command = Path(sys.executable).absolute().parent / "contextrove"
     if not command.is_file():
         raise MemoryError("CLI_NOT_FOUND", f"Install the CLI in the current Python environment: {command}")
     rendered = source.read_text(encoding="utf-8")

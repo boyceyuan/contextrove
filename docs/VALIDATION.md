@@ -233,3 +233,17 @@ discovery/execution limits are listed in [CLIENTS.md](CLIENTS.md).
 This round validates installer behavior, not new model sessions or lifecycle
 hooks. WorkBuddy stays manual; CodeBuddy trust must be granted in the client.
 Remote CI for this change is reported separately from these local results.
+
+## ContextRove rename (2026-10-29)
+
+The renamed `contextrove==0.2.0` distribution passed 51 local tests and Ruff.
+Its sdist→wheel build and fresh-environment install passed the context workflow,
+multi-client placement/reuse/doctor and the legacy `shared-memory demo` alias.
+Both old and new CLI/MCP entry points are present. The Python module, MCP ID,
+Skill ID and default workspace stay unchanged; see [migration](MIGRATION.md).
+The two-session MCP regression passed after renaming. Isolated discovery was
+rerun against the new template: Codex 0.165.0-alpha.1.2 passed; OpenCode 2.2.0
+still returned no entries for all three sources with explicit config loaded.
+
+These are source/wheel validation results, not a PyPI/npm publication. GitHub
+rename, branch merge and remote CI status are independently observable actions.

@@ -20,11 +20,17 @@ def main():
         environment = base / "venv"
         venv.EnvBuilder(with_pip=True).create(environment)
         python = environment / "bin" / "python"
-        cli = environment / "bin" / "shared-memory"
+        cli = environment / "bin" / "contextrove"
         env = {key: value for key, value in os.environ.items()
                if key not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
         subprocess.run([str(python), "-m", "pip", "install", "--no-index", "--no-deps",
                         str(wheel)], cwd=base, env=env, check=True)
+        # Old console names remain aliases; the Python module and MCP ID stay stable.
+        for name in ("shared-memory", "shared-memory-mcp", "contextrove-mcp"):
+            assert (environment / "bin" / name).is_file(), name
+        alias = subprocess.run([str(environment / "bin/shared-memory"), "demo"],
+                               cwd=base, env=env, capture_output=True, text=True, check=True)
+        assert json.loads(alias.stdout)["after"] == "verified"
         project = base / "project"
         project.mkdir()
         workspace = base / "context with ' quotes"

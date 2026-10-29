@@ -1,19 +1,24 @@
 # 命名与设计对照
 
-状态：建议，不代表已更名或已实现新功能。审阅日期：2026-10-27。
+状态：2026-10-27 初始审阅；2026-10-29 按更名分支更新，不代表新增自动学习能力。
 产品目的是记录个人与项目上下文，供多个 Agent 客户端复用。Markdown 是当前的
 规范存储格式，不是产品类别。
 
 ## 命名判断
 
-**建议使用 Shared Context 作为对外定位**；暂保留 `shared-memory-gateway` 仓库、
-Python 包和 MCP 服务的技术标识。“Shared” 指跨客户端复用，“Context” 同时包含
-个人偏好和项目知识，也不暗示自动记忆。它是通用描述，不是独占品牌。正式更名之前
-还需检查包名、仓库名和兼容迁移；单靠 GitHub 搜索不能证明商标或包名可用。
+**本次实现采用 ContextRove**（`contextrove`）：Context 对应当前个人／项目知识，
+Rove 表达随你跨工具延续；工作方法和 SOP Skill 可在这个定位下积累，不承诺自动学习、
+数字分身或通用 Agent 运行时。Shared Context 继续作为用途描述。
+
+2026-10-29 的初步检查：GitHub 仓库名称检索未发现 `contextrove`，
+`boyceyuan/contextrove`、PyPI `/pypi/contextrove/json` 和 npm `/contextrove` 均返回 404。
+这不是商标审查、包名预留或已发布证明。ContextPort、ContextWeft、Workweft 已有 Agent
+相关用途，Carrykit 也有公开使用。更名范围及兼容标识见[迁移说明](MIGRATION.md)。
 
 | 候选 | 适配与风险 | 判断 |
 |---|---|---|
-| Shared Memory Gateway | 准确描述当前本地 CLI／MCP 访问边界，但 gateway 容易被理解为代理或网络入口，memory 也可能暗示自动捕获 | 保留现有技术标识，不把它当产品承诺 |
+| ContextRove | 上下文跨工具延续，并可逐步积累工作方法 | 新产品名、分发包名与主 CLI 名 |
+| Shared Memory Gateway | 原 CLI／MCP 访问边界，gateway 易被理解为网络代理 | 保留涉及兼容的旧命令、模块与配置标识 |
 | Shared Context | 准确覆盖个人／项目上下文跨客户端复用；是已有项目也使用的通用词 | 作为产品定位，不宣称名称独占 |
 | Context Ledger | 暗示持久审计历史／变更账本，当前没有实现 | 不采用 |
 | Context Anchor | 易暗示会话锚定或自动注入提示词，当前服务不能保证 | 不采用 |
