@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 810" role="img" aria-labelledby="title desc">
   <title id="title">Shared context architecture</title>
-  <desc id="desc">OpenCode, Codex and the CLI each use an independent local core instance; the center column shows the repeated implementation, not a central server. All instances read the same configuration and canonical personal and project Markdown and coordinate writes through one lock directory. A human editor accesses Markdown directly. The lower panel shows read, propose and revision-checked apply.</desc>
+  <desc id="desc">Codex and OpenCode load the shared context Skill, which guides the CLI to a repeated local core. MCP remains an optional adapter. All access uses canonical personal and project Markdown, one config and one lock directory. A human editor accesses Markdown directly. The lower panel shows read, propose and revision-checked apply.</desc>
   <defs>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #172b30; }
@@ -24,36 +24,36 @@
   <rect width="1440" height="810" fill="url(#grid)" opacity=".35"/>
   <rect width="1440" height="8" fill="#08756e"/>
   <text x="64" y="58" class="k">SYSTEM OVERVIEW / LOCAL-FIRST</text>
-  <text x="64" y="105" class="h">One source of truth. Separate client connections.</text>
-  <text x="64" y="136" class="sub">Each client connects locally; the files, configuration and lock directory are shared.</text>
+  <text x="64" y="105" class="h">One source of truth. A shared agent workflow.</text>
+  <text x="64" y="136" class="sub">The Skill guides CLI actions; MCP remains an optional adapter.</text>
 
-  <text x="64" y="188" class="k">01   CLIENTS</text>
-  <text x="455" y="188" class="k">02   REPEATED LOCAL ACCESS</text>
+  <text x="64" y="188" class="k">01   AGENT CLIENTS</text>
+  <text x="455" y="188" class="k">02   SKILL + LOCAL ACCESS</text>
   <text x="885" y="188" class="k">03   CANONICAL CONTEXT</text>
 
   <rect x="64" y="210" width="308" height="122" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
   <rect x="64" y="210" width="7" height="122" fill="#127870"/>
   <text x="88" y="249" class="label">OpenCode</text>
-  <text x="88" y="278" class="small">Agent + client rules</text>
-  <text x="88" y="306" class="mono">MCP stdio</text>
+  <text x="88" y="278" class="small">Shared context Skill</text>
+  <text x="88" y="306" class="mono">CLI (primary)</text>
 
   <rect x="64" y="347" width="308" height="122" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
   <rect x="64" y="347" width="7" height="122" fill="#d18a45"/>
   <text x="88" y="386" class="label">Codex</text>
-  <text x="88" y="415" class="small">Agent + client rules</text>
-  <text x="88" y="443" class="mono">MCP stdio</text>
+  <text x="88" y="415" class="small">Shared context Skill</text>
+  <text x="88" y="443" class="mono">CLI (primary)</text>
 
   <rect x="64" y="484" width="308" height="86" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
   <text x="88" y="522" class="label">JSON CLI</text>
   <text x="88" y="548" class="small">Same core implementation</text>
 
   <rect x="455" y="210" width="344" height="360" rx="6" fill="#e7f1ef" stroke="#8cbab4" stroke-width="2"/>
-  <text x="480" y="249" class="label">MCP / CLI core</text>
-  <text x="480" y="277" class="small">Separate stdio server per MCP client</text>
+  <text x="480" y="249" class="label">CLI / shared core</text>
+  <text x="480" y="277" class="small">Optional MCP adapter uses this same core</text>
   <path d="M477 294H777" stroke="#a9c7c3" stroke-width="2"/>
   <rect x="480" y="311" width="293" height="61" rx="4" fill="#ffffff"/>
   <text x="496" y="340" class="mono">bootstrap · search · read</text>
-  <text x="496" y="358" class="small">Live reads from disk</text>
+  <text x="496" y="358" class="small">Skill-guided live reads from disk</text>
   <rect x="480" y="381" width="293" height="75" rx="4" fill="#ffffff"/>
   <text x="496" y="409" class="mono">propose → apply</text>
   <text x="496" y="430" class="small">Diff, revision check, file replace</text>

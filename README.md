@@ -5,13 +5,15 @@ English | [简体中文](README.zh-CN.md)
 **Personal and project context, shared across agents. Corrections instead of append-only memory.**
 
 A small, local-first proof of concept for recording and maintaining personal and
-project context, then sharing it across agents through CLI or MCP stdio. Markdown
-is the current portable, human-readable storage format, not the product's purpose.
+project context across agent clients. The product is the local file-backed core
+and its reusable Skill workflow; CLI is the execution interface and MCP is an
+optional adapter. Markdown is the current portable, human-readable storage format,
+not the product's purpose.
 The core has no runtime dependencies, model calls, telemetry, or vector database.
 
 [Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md) · [Name and design](docs/DESIGN_REVIEW.md)
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [Context model](#context-and-responsibility) · [MCP integration](#mcp-integration) · [Roadmap](#roadmap--development-plan)
+[Quick start](#quick-start) · [Architecture](#architecture) · [Skill workflow](#skill-workflow) · [CLI and MCP](#cli-and-mcp-integration) · [Roadmap](#roadmap--development-plan)
 
 > **Alpha / proof of concept.** The caller performs semantic synthesis. This is
 > not an autonomous memory extraction engine, a Mem0 replacement, or a certified
@@ -28,19 +30,19 @@ Shared context has three separate problems:
 
 The goal is to preserve useful personal preferences and project understanding
 across tools and sessions, with clear boundaries between the two. Markdown is used
-because people can inspect, edit, move, and version it with ordinary tools. MCP
-provides a common access path; it does not itself guarantee timely retrieval or
-factual quality. This project adds a small write boundary and reproducible tests.
+because people can inspect, edit, move, and version it with ordinary tools. A
+portable Skill explains when and how the agent should use the local CLI. No agent
+protocol by itself guarantees timely retrieval or factual quality.
 
 ## Architecture
 
-![Architecture: independent client processes share canonical Markdown, config and locks; corrections read, propose and recheck before applying](docs/assets/context-architecture.svg)
+![Architecture: shared Skill guides agents through the CLI and local core; optional MCP uses the same Markdown, config and locks](docs/assets/context-architecture.svg)
 
-Each connected client launches its own MCP stdio server process, with its own
-core instance. Other MCP clients can use the adapter but have not been validated.
-The CLI uses the same core implementation. All processes use the same local
-config, Markdown files, and state directory; the state holds
-locks, not a second copy of context. A human editor works on the files directly
+Each agent uses the same local core and configured workspace. The Skill guides
+the workflow; CLI actions execute reads and revision-checked writes. MCP stdio is
+an optional adapter over the same core. All clients use the same local config,
+Markdown files, and state directory; the state holds locks, not a second copy of
+context. A human editor works on the files directly
 and does not participate in the gateway lock. Project filtering selects relevant
 content; it is **not** an access-control boundary. A client configured with this
 workspace can read every allowlisted file.
@@ -49,8 +51,8 @@ workspace can read every allowlisted file.
 
 | Layer | Responsibility | Where it lives |
 |---|---|---|
-| Agent client | Decide when to load context, assess source and meaning, review diffs, enforce user policy | Client rules or hooks; outside this server |
-| MCP / CLI adapter | Expose the same core operations to multiple processes | `server.py` (optional `mcp` extra), `cli.py` |
+| Agent workflow | Decide when to load context, assess source and meaning, review diffs, enforce user policy | Shared `SKILL.md`; client skill loader |
+| CLI / optional MCP | Execute local operations for agents | `cli.py`; optional `server.py` (`mcp` extra) |
 | Shared core | Check allowlist, resolve an explicit project root, read/search current files, compare revisions and apply an exact edit | `core.py` |
 | Canonical context | Separate personal and project topics, edited in place and portable as files | UTF-8 Markdown under configured `vault` |
 | Machine-local metadata | List approved files, bootstrap entries, project mappings and coordinated locks | `memory.local.json` and `.state/`; not knowledge copies |
@@ -73,7 +75,7 @@ dependency.
 
 ### Read and correction paths
 
-1. **Discover:** a client calls `bootstrap` with its actual absolute project
+1. **Discover:** the Skill instructs the agent to call `bootstrap` through the CLI with its actual absolute project
    directory; the core returns a small global context and matching project
    paths, or an explicit unmatched/ambiguous status. `search` rereads allowlisted
    files and returns literal-match snippets; `read` returns the full selected file
@@ -94,8 +96,8 @@ best effort. A failure after replacement can return `WRITE_UNCERTAIN`, so read
 the file before deciding whether to retry.
 
 This is a **file-first, local single-user design**, not an automatic fact
-extractor or an agent runtime. MCP makes operations available; it does not
-trigger startup reads or compaction recovery. The lock coordinates gateway
+extractor or an agent runtime. A Skill guides tool use but does not guarantee
+startup reads or compaction recovery. The lock coordinates gateway
 processes only: direct editor writes can still race between the final check
 and replacement. Recovery snapshots and better retrieval are [planned](#roadmap--development-plan),
 not components of the diagram. See [validation](docs/VALIDATION.md) for tested
@@ -105,8 +107,11 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 - `shared-memory init` creates separate personal and project context templates,
   an allowlisted workspace, and a machine-local config without overwriting files.
-- `shared-memory demo` checks a disposable local correction; `setup --client`
-  creates or reuses a project workspace and registers OpenCode or Codex via its CLI.
+- `shared-memory demo` checks a disposable local correction; `setup --client skill`
+  initializes a workspace and installs the portable Skill.
+- `shared-memory agent` exposes argument-based bootstrap, read, search, propose,
+  apply and forget actions for Skill workflows. `setup --client skill` safely
+  reuses one workspace across non-overlapping projects.
 - Exact allowlisted UTF-8 Markdown files; no recursive vault crawling.
 - Raw-byte SHA-256 revisions, diff previews and exact single-passage replacements.
 - Cross-process POSIX `flock`, atomic replacement and best-effort external-edit checks.
@@ -139,30 +144,51 @@ Python 3.11+ on macOS or Linux. Install from a checkout:
 git clone https://github.com/boyceyuan/shared-memory-gateway.git
 cd shared-memory-gateway
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[mcp]'
+.venv/bin/python -m pip install -e .
 ```
 
-Still in this checkout, register an installed client for the project you want
-to keep context for (replace the one absolute project path):
+Still in this checkout, install the shared Skill and create its local context
+workspace (replace the one absolute project path):
 
 ```bash
-.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
-# or: .venv/bin/shared-memory setup --client codex --project-root /absolute/path/to/your/project
+.venv/bin/shared-memory setup --client skill --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
-`setup` creates `~/.shared-memory-gateway/` with separate personal/project
-Markdown, registers the local MCP server using the chosen client's CLI, and
-prints the note paths. Edit the project note, restart the client, then ask it
-to `bootstrap` this project's absolute path and `read` the returned project
-entry. **A successful registration is not proof that the model used the tool.**
-For a second client in the *same project*, run `setup` again with its `--client`
-and the same `--project-root`; it reuses the existing notes. OpenCode
-registration is global; Codex uses its MCP CLI scope. An unrelated existing
-context directory is rejected. For a different project, a new `--directory`
-alone is insufficient because `setup` uses a fixed MCP server name. Configure
-additional projects and server names manually using [MCP integration](#mcp-integration).
-If registration fails after workspace creation, the error includes a retry
-command; rerunning `setup` with the same project also reuses the workspace.
+`setup --client skill` creates the selected workspace (default
+`~/.shared-memory-gateway/`) and installs `shared-context` under
+`~/.agents/skills/`. Edit the printed personal/project note paths. Start a
+**new** client session and ask it to use the `shared-context` skill. The Skill
+then calls the CLI to bootstrap
+the current project and read the matched note. Installing instructions is not
+proof the client executed them; inspect the tool result. An unrelated existing
+workspace or Skill is never overwritten.
+
+To add another non-overlapping project, repeat the same command with its root.
+This reuses the personal note, config and installed Skill, and creates a separate
+project note. Running it again for the same root preserves existing notes.
+The first project has ID `current-project`; later IDs use the root directory's
+name. Duplicate names and overlapping roots require manual configuration.
+Use `bootstrap.projects` and `bootstrap.entries`, rather than assuming an ID.
+
+For an existing configured workspace, run
+`.venv/bin/shared-memory skill install --workspace /absolute/path/to/workspace`.
+`--skill-home /path/to/skills` selects another discovery source; the installer
+adds `shared-context/SKILL.md` beneath it. The Skill binds absolute CLI/workspace
+paths. Moving the installation requires reviewing/removing that generated Skill
+and reinstalling it; a different existing Skill is rejected rather than updated.
+
+### Optional MCP integration
+
+If you specifically prefer MCP, install its extra and use the alternate setup
+from the gateway checkout:
+
+```bash
+.venv/bin/python -m pip install -e '.[mcp]'
+.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+# or --client codex
+```
+
+MCP is an alternative transport, not a prerequisite for the Skill workflow.
 
 Want a no-client self-check first? Run `.venv/bin/shared-memory demo`. It
 prints `before: pending`, `after: verified`, and
@@ -171,7 +197,26 @@ The previous [Codex → OpenCode model-session test](docs/VALIDATION.md#real-cli
 used synthetic notes; startup retrieval without prompting remains unverified.
 
 For manual setup, existing workspaces, migration, and protocol checks, see
-[MCP integration](#mcp-integration) and [validation](docs/VALIDATION.md).
+[CLI and MCP integration](#cli-and-mcp-integration) and [validation](docs/VALIDATION.md).
+
+## Skill workflow
+
+The installed `shared-context` skill teaches compatible agents to:
+
+- call `bootstrap` at task start with the current project path, then explicitly
+  read matched project entries;
+- use literal search when a topic is unknown and read its source before relying on it;
+- preserve personal/project and evidence boundaries;
+- preview revision-bound edits and apply them under the caller's approval policy,
+  honoring standing authorization without repeatedly asking.
+
+The skill is a workflow prompt, not a sandbox, model tool, or guarantee that a
+client loads it. Its commands run through the local CLI. Verify actual skill
+discovery and CLI calls in each client; loading the skill alone does not prove it
+ran. Codex and OpenCode V2 documentation list the shared `~/.agents/skills`
+location. Client/version evidence and any discovery limitations are recorded in
+[validation](docs/VALIDATION.md#skill-first-validation-2026-10-28). Other agents
+may require a different installation path.
 
 ## Context workspace configuration
 
@@ -191,7 +236,30 @@ absolute explicit paths; nested roots matching multiple projects are ambiguous.
 Project filtering is retrieval convenience, not tenant-level authorization: every
 client attached to a config can read every note allowlisted by that config.
 
-## MCP integration
+## CLI and MCP integration
+
+The Skill invokes the argument-based CLI. Every action requires an initialized
+workspace, uses the configured allowlist, and reads live files:
+
+```bash
+shared-memory agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
+shared-memory agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
+shared-memory agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
+```
+
+The read/search examples use the first project's generated paths; for other
+projects use the entries and single project ID returned by bootstrap. Pass
+`--project-root "$PWD"` to `bootstrap`; the command's default is the shell's
+current directory. The CLI catches domain errors as structured JSON and reports
+a nonzero exit status; scripts should check that status before consuming output.
+For updates, `agent propose` prints a diff without writing; `agent apply` accepts
+the same exact arguments and rechecks revision and passage under the file lock.
+`agent forget` removes an exact passage. These are local operations; semantic
+truth, privacy policy, and user approval remain the agent/user's responsibility.
+
+MCP is an optional adapter over the same core. Install `.[mcp]` and use
+`setup --client opencode` or `setup --client codex` to register it. The `init`
+output still contains native OpenCode V2, Codex and generic `mcpServers` forms.
 
 The initializer prints `opencode_v2_config`, `codex_mcp_add`, and `mcp_config`,
 all using the active Python executable and absolute config path. For OpenCode V2,
@@ -270,7 +338,8 @@ validation-gated plans, not delivery commitments.
   project switching with distinct synthetic contexts, stale-write reconciliation
   by the model, and retrieval after compaction. Fresh-session reading with an
   explicit tool-use prompt is already covered by the baseline above.
-- Document client-specific MCP setup and lifecycle hooks only where observed.
+- Verify Skill discovery and actual Skill-guided CLI execution separately; document
+  client-specific setup and lifecycle hooks only where observed. MCP remains optional.
 - Acceptance: record the actual tool calls and content for each scenario, including
   failures and unsupported hooks; do not use production context.
 

@@ -4,13 +4,14 @@
 
 **记录个人与项目上下文，让多个 Agent 共用；修订旧记忆，而不只是不断追加。**
 
-这是一个小型、本地优先的开源原型，用于记录和维护个人与项目上下文，并通过
-CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可人工检查的
-存储格式，不是项目目的本身。核心不调用模型、不发送遥测，也不要求向量数据库。
+这是一个小型、本地优先的开源原型，用于跨 Agent 维护个人与项目上下文。产品核心是
+本地文件读写能力和可复用 Skill 工作流；CLI 负责执行，MCP 是可选适配器。Markdown
+是当前可迁移、可人工检查的存储格式，不是项目目的本身。核心不调用模型、不发送遥测，
+也不要求向量数据库。
 
 [Agent 使用规则](docs/AGENT_RULES.md) · [安全说明](SECURITY.md) · [验证记录](docs/VALIDATION.md) · [命名与设计](docs/DESIGN_REVIEW.zh-CN.md)
 
-[快速开始](#快速开始) · [整体架构](#整体架构) · [上下文模型](#上下文与职责) · [MCP 接入](#mcp-接入) · [开发计划](#后续方向与开发计划)
+[快速开始](#快速开始) · [整体架构](#整体架构) · [Skill 工作流](#skill-工作流) · [CLI 与 MCP](#cli-与-mcp-接入) · [开发计划](#后续方向与开发计划)
 
 > **Alpha／概念验证。** 语义理解与知识整合由调用方负责。本项目不是自动记忆
 > 提取引擎、Mem0 替代品，也不是经过认证的并发编辑器。请先使用合成笔记库，
@@ -25,17 +26,16 @@ CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可�
 3. **持续维护**：新信息修订已有主题，而不是累积互相矛盾的片段。
 
 项目目标是让个人偏好和项目理解能够跨工具、跨会话延续，同时明确区分个人与项目
-边界。选择 Markdown 是因为用户可以直接查看、编辑、迁移和版本管理。MCP 提供
-共同访问，但不保证客户端会及时读取，也不保证事实质量；本项目在其上提供精简的
-写入边界和可复现测试。
+边界。选择 Markdown 是因为用户可以直接查看、编辑、迁移和版本管理。共享 Skill
+说明何时读取以及如何谨慎修订；任何接入协议本身都不保证客户端会及时读取或事实质量。
 
 ## 整体架构
 
-![整体架构：各客户端连接独立的 MCP 进程，共用规范 Markdown、本机配置和锁目录；修订经过读取、预览和版本复核](docs/assets/context-architecture.zh-CN.svg)
+![整体架构：共享 Skill 指导 Agent 调用 CLI 和本地核心；可选 MCP 使用同一套 Markdown、配置和锁](docs/assets/context-architecture.zh-CN.svg)
 
-每个已接入的客户端各自启动 MCP stdio 进程，并持有独立核心实例；其他 MCP 客户端
-也可接入同一适配器，但尚未验收。CLI 使用相同的
-核心实现。各进程指向同一份本机配置、Markdown 文件与状态目录；状态目录
+各 Agent 使用相同的本地核心与上下文工作区。Skill 指导工作流，CLI 执行读取和版本校验
+后的写入；MCP stdio 是同一核心的可选适配器。各客户端使用同一份本机配置、Markdown
+文件与状态目录；状态目录
 仅存锁，不维护第二套上下文。人工编辑器直接修改文件，不参与服务进程的锁。
 项目过滤只决定返回哪些相关内容，**不是访问权限隔离**；接入同一工作区的客户端
 可以读取全部白名单文件。
@@ -44,8 +44,8 @@ CLI 或 MCP stdio 在多个 Agent 间共享。Markdown 是当前可迁移、可�
 
 | 层次 | 职责 | 位置 |
 |---|---|---|
-| Agent 客户端 | 决定读取时机、判断来源和语义、审阅差异、执行用户政策 | 客户端规则或 Hook；服务之外 |
-| MCP／CLI 适配 | 为多个进程暴露同一套核心操作 | `server.py`（可选 `mcp` 依赖）、`cli.py` |
+| Agent 工作流 | 决定读取时机、判断来源和语义、审阅差异、执行用户政策 | 共享 `SKILL.md`；客户端 Skill 加载器 |
+| CLI／可选 MCP | 为 Agent 执行本地上下文操作 | `cli.py`；可选 `server.py`（`mcp` 依赖） |
 | 共享核心 | 校验白名单、匹配显式项目根路径、读盘检索、比较版本并应用精确修改 | `core.py` |
 | 规范上下文 | 个人与项目主题分开维护，原位修订，文件可迁移 | 配置 `vault` 下的 UTF-8 Markdown |
 | 本机元数据 | 记录批准文件、启动入口、项目映射和进程协调锁 | `memory.local.json` 与 `.state/`；不是知识副本 |
@@ -63,7 +63,7 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 
 ### 读取与修订流程
 
-1. **定位与读取：**客户端用当前实际项目的绝对路径调用 `bootstrap`，获得精简的
+1. **定位与读取：**Skill 指导 Agent 通过 CLI 用当前实际项目的绝对路径调用 `bootstrap`，获得精简的
    全局上下文和项目入口，或明确的未匹配／歧义状态。`search` 每次读盘，返回字面
    命中的片段；`read` 返回指定文件全文和原始字节的 SHA-256 版本。
 2. **预览修订：**客户端提供旧段、新段、预期版本、理由及来源；
@@ -77,8 +77,8 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
 半写入正文，最终外部编辑检查属于尽力检测；替换后发生故障可能返回
 `WRITE_UNCERTAIN`，应先读回文件，再决定如何重试。
 
-这是**文件优先的本地单用户设计**，不是自动事实提取器或 Agent 运行时。MCP 只暴露
-操作，不会自动触发启动读取或压缩恢复。锁仅协调 Gateway 进程；人工编辑仍可能在
+这是**文件优先的本地单用户设计**，不是自动事实提取器或 Agent 运行时。Skill 只指导
+工作流，不保证启动读取或压缩恢复。锁仅协调 Gateway 进程；人工编辑仍可能在
 最终检查与替换之间产生竞争。恢复快照和更强检索属于[后续计划](#后续方向与开发计划)，
 不是架构图中的现有组件。已验证的跨客户端范围见[验证记录](docs/VALIDATION.md)，
 文件系统边界见[安全说明](SECURITY.md)。
@@ -98,8 +98,11 @@ Agent 再按需显式读取。新增专题必须先有 Markdown 文件，再将�
   会话读取到修订内容；证据与边界见[验证记录](docs/VALIDATION.md)。
 - `shared-memory init` 可初始化独立的个人／项目上下文模板、白名单和本机配置，
   目标路径已存在时拒绝使用。
-- `shared-memory demo` 验证隔离的本地修订；`setup --client` 初始化或复用项目工作区，
-  通过 OpenCode／Codex CLI 注册 MCP 服务。
+- `shared-memory demo` 验证隔离的本地修订；`setup --client skill` 初始化工作区并安装
+  便携 Skill。
+- `shared-memory agent` 提供面向 Skill 工作流的 bootstrap、read、search、propose、
+  apply 与 forget 参数式命令。
+- `setup --client skill` 可在不重叠的多个项目间安全复用同一工作区。
 
 ## 尚未实现
 
@@ -119,25 +122,43 @@ macOS／Linux，Python 3.11+。先在仓库目录安装：
 git clone https://github.com/boyceyuan/shared-memory-gateway.git
 cd shared-memory-gateway
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[mcp]'
+.venv/bin/python -m pip install -e .
 ```
 
-仍在本仓库目录，选择一个已安装客户端，只需替换要记录上下文的项目绝对路径：
+仍在 Gateway 仓库目录，安装共享 Skill 并创建本地工作区（替换为项目绝对路径）：
 
 ```bash
-.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
-# 或：.venv/bin/shared-memory setup --client codex --project-root /absolute/path/to/your/project
+.venv/bin/shared-memory setup --client skill --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
-`setup` 会创建 `~/.shared-memory-gateway/` 的个人／项目 Markdown，通过客户端
-CLI 注册本地 MCP 服务，并输出笔记路径。编辑项目笔记、重启客户端，再要求它以当前
-项目的绝对路径调用 `bootstrap` 并 `read` 返回的项目入口。
-**注册成功不代表模型已调用工具。**同一项目接入第二个客户端时，换一个
-`--client`、保持同一 `--project-root` 再执行 `setup`，已有笔记会保留。OpenCode 使用全局注册；Codex 使用
-其 MCP CLI 的作用域。不相关的已有目录会被拒绝。`setup` 使用固定 MCP 服务名；
-其他项目不能仅靠指定新目录并行接入，需要按 [MCP 接入](#mcp-接入) 手动配置项目
-与服务名。若工作区创建后注册失败，错误会给出重试
-命令；同一项目重复执行 `setup` 也会复用工作区。
+`setup --client skill` 会创建指定工作区（默认 `~/.shared-memory-gateway/`），并将
+`shared-context` 安装到用户级 `~/.agents/skills/`。编辑输出的个人／项目笔记路径，
+启动一个**新**客户端会话，并要求它使用 `shared-context` Skill。Skill 会指导 Agent
+通过 CLI 定位当前项目并读取匹配笔记。安装指令不代表客户端已执行；请检查实际工具输出。
+已有工作区或 Skill 不会被覆盖。
+
+接入另一个不重叠的项目时，用新项目根路径重复同一命令。个人笔记、配置和 Skill 会复用，
+每个项目有独立笔记；相同根路径重复执行会保留已有内容。第一个项目 ID 为 `current-project`，
+后续 ID 使用根目录名；重名或重叠根路径需要手动配置。以 `bootstrap.projects` 和
+`bootstrap.entries` 返回值为准，不要假定项目 ID。
+
+已有配置工作区可执行
+`.venv/bin/shared-memory skill install --workspace /absolute/path/to/workspace`。
+`--skill-home /path/to/skills` 可指定其他发现目录，安装器会在其下创建 `shared-context/SKILL.md`。
+Skill 绑定本机 CLI 与工作区的绝对路径；移动安装后，需要检查并移除原生成 Skill 再安装，
+不同内容的已有 Skill 会被拒绝，不会自动更新。
+
+### 可选 MCP 接入
+
+如果明确需要 MCP，安装可选依赖后使用原有接入路径：
+
+```bash
+.venv/bin/python -m pip install -e '.[mcp]'
+.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+# 或 --client codex
+```
+
+MCP 是另一种传输方式，不是 Skill 工作流的前置依赖。
 
 想先做无需客户端的自检，可在 Gateway 仓库运行 `.venv/bin/shared-memory demo`：
 它用自动清理的合成文件输出 `before: pending`、`after: verified` 和
@@ -145,7 +166,26 @@ CLI 注册本地 MCP 服务，并输出笔记路径。编辑项目笔记、重�
 此前的 [Codex → OpenCode 模型会话验证](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
 使用的是隔离合成笔记；无提示启动自动读取仍未验收。
 
-手动接入、已有工作区、迁移和协议测试见 [MCP 接入](#mcp-接入)及[验证记录](docs/VALIDATION.md)。
+手动 CLI／MCP 接入、已有工作区、迁移和协议测试见 [CLI 与 MCP 接入](#cli-与-mcp-接入)
+及[验证记录](docs/VALIDATION.md)。
+
+## Skill 工作流
+
+安装的 `shared-context` Skill 会指导兼容 Agent：
+
+- 在任务开始时用当前项目路径调用 `bootstrap`，再显式读取匹配的项目入口；
+- 不确定主题时使用字面检索，并在依赖结果前读取来源正文；
+- 区分个人偏好、项目事实与证据状态；
+- 检查绑定版本的修订预览，并按调用方批准政策应用；已有持续授权时不重复询问。
+
+Skill 是工作流指令，不是沙箱、本地工具或“客户端一定执行”的保证。命令由本机 CLI 执行。
+应在各客户端分别核验 Skill 是否被发现、CLI 是否实际运行；仅加载 Skill 不等于执行了流程。
+Codex 与 OpenCode V2 文档均列出共享 `~/.agents/skills` 目录；各版本的发现结果与限制见
+[验证记录](docs/VALIDATION.md#skill-first-validation-2026-10-28)。其他 Agent 可能需要不同安装路径。
+
+Codex CLI 0.165.0 的隔离 app-server Skill 列表发现测试通过。OpenCode CLI 2.2.0 的隔离 API
+测试没有发现共享目录、文档所列原生全局目录或显式项目 Skill 源；这是本次 CLI/API 探针的
+负向观察，不能据此断言 OpenCode TUI 不支持它们。OpenCode 的实际 Skill 引导执行仍待验证。
 
 ## 上下文工作区配置
 
@@ -161,7 +201,26 @@ CLI 注册本地 MCP 服务，并输出笔记路径。编辑项目笔记、重�
 返回歧义。项目过滤只是检索范围，不是租户级授权：使用同一配置的客户端都能读取
 该配置白名单中的全部笔记。
 
-## MCP 接入
+## CLI 与 MCP 接入
+
+Skill 通过参数式 CLI 调用本机核心。每个操作都要求已初始化的工作区，遵循文件白名单，
+并直接读取当前文件：
+
+```bash
+shared-memory agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
+shared-memory agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
+shared-memory agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
+```
+
+上面的 read／search 示例使用第一个项目的生成路径；其他项目应使用 bootstrap 返回的入口与唯一项目 ID。
+调用 `bootstrap` 时传入 `--project-root "$PWD"`；命令默认值就是 shell 当前目录。CLI 遇到领域错误时
+会输出结构化 JSON 并返回非零状态码；脚本消费输出前应先检查状态码。
+修订时，`agent propose` 只输出 diff、不写文件；`agent apply` 使用相同参数并在锁内重新
+校验版本与精确段落。`agent forget` 删除精确段落。这些本地操作不负责验证语义真伪，隐私与
+用户批准仍由 Agent／用户决定。
+
+MCP 是同一核心的可选适配器。安装 `.[mcp]` 后可用 `setup --client opencode` 或
+`setup --client codex` 注册。`init` 仍提供 OpenCode V2、Codex 和通用 `mcpServers` 配置。
 
 `init` 输出 `opencode_v2_config`、`codex_mcp_add` 和 `mcp_config`，都包含当前
 Python 环境和配置文件的绝对路径。OpenCode V2 可将以下结构合并到项目或全局的
