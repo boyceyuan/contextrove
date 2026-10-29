@@ -1,7 +1,7 @@
 ---
 name: shared-context
 description: Read, search, and carefully maintain this project's shared personal and project context. Use when a task needs prior user preferences or project decisions, or when a confirmed durable fact should correct an existing topic rather than be appended.
-compatibility: Requires the separately installed shared-memory CLI and a configured local context workspace.
+compatibility: Requires the separately installed ContextRove CLI and a configured local context workspace.
 ---
 
 # Shared Context
@@ -75,7 +75,7 @@ if either changed, stop, reread, and reconcile. Never blindly retry a conflict
 or uncertain write. Shell-quote all substituted values safely (including embedded
 quotes, dollar signs and backticks); never paste note content as shell code.
 For complex multiline edits, use the JSON-on-stdin CLI described by
-`shared-memory propose_update --help` and `shared-memory apply_update --help`
+`contextrove propose_update --help` and `contextrove apply_update --help`
 with `--config <workspace>/memory.local.json`, passing the full proposal object
 to apply. Construct JSON and subprocess argument arrays with a script instead
 of interpolating note text into a shell command.

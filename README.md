@@ -1,4 +1,4 @@
-# Shared Memory Gateway
+# ContextRove
 
 English | [简体中文](README.zh-CN.md)
 
@@ -10,6 +10,10 @@ and its reusable Skill workflow; CLI is the execution interface and MCP is an
 optional adapter. Markdown is the current portable, human-readable storage format,
 not the product's purpose.
 The core has no runtime dependencies, model calls, telemetry, or vector database.
+
+Formerly Shared Memory Gateway. ContextRove carries your context across tools;
+working methods and business SOPs can be refined into portable Skills over time.
+The current package provides context maintenance and its bundled Skill workflow.
 
 [Agent rules](docs/AGENT_RULES.md) · [Security](SECURITY.md) · [Validation](docs/VALIDATION.md) · [Name and design](docs/DESIGN_REVIEW.md)
 
@@ -107,11 +111,11 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 
 ## Implemented
 
-- `shared-memory init` creates separate personal and project context templates,
+- `contextrove init` creates separate personal and project context templates,
   an allowlisted workspace, and a machine-local config without overwriting files.
-- `shared-memory demo` checks a disposable local correction; `setup --client skill`
+- `contextrove demo` checks a disposable local correction; `setup --client skill`
   initializes a workspace and installs the portable Skill.
-- `shared-memory agent` exposes argument-based bootstrap, read, search, propose,
+- `contextrove agent` exposes argument-based bootstrap, read, search, propose,
   apply and forget actions for Skill workflows. `setup --client skill` safely
   reuses one workspace across non-overlapping projects.
 - Multi-client Skill installation with repeatable `--agent`, user/project scope,
@@ -145,8 +149,8 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 Python 3.11+ on macOS or Linux. Install from a checkout:
 
 ```bash
-git clone https://github.com/boyceyuan/shared-memory-gateway.git
-cd shared-memory-gateway
+git clone https://github.com/boyceyuan/contextrove.git
+cd contextrove
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
@@ -155,7 +159,7 @@ Still in this checkout, install the shared Skill and create its local context
 workspace (replace the one absolute project path):
 
 ```bash
-.venv/bin/shared-memory setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
+.venv/bin/contextrove setup --client skill --agent codex --directory "$HOME/.shared-memory-gateway" --project-root /absolute/path/to/your/project
 ```
 
 `setup --client skill` creates the selected workspace (default
@@ -177,7 +181,7 @@ name. Duplicate names and overlapping roots require manual configuration.
 Use `bootstrap.projects` and `bootstrap.entries`, rather than assuming an ID.
 
 For an existing configured workspace, run
-`.venv/bin/shared-memory skill install --workspace /absolute/path/to/workspace`.
+`.venv/bin/contextrove skill install --workspace /absolute/path/to/workspace`.
 `--skill-home /path/to/skills` selects another discovery source; the installer
 adds `shared-context/SKILL.md` beneath it. The Skill binds absolute CLI/workspace
 paths. Moving the installation requires reviewing/removing that generated Skill
@@ -186,9 +190,9 @@ and reinstalling it; a different existing Skill is rejected rather than updated.
 ### Install for multiple local clients
 
 ```bash
-.venv/bin/shared-memory skill clients
-.venv/bin/shared-memory skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
-.venv/bin/shared-memory skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/contextrove skill clients
+.venv/bin/contextrove skill install --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
+.venv/bin/contextrove skill doctor --workspace "$HOME/.shared-memory-gateway" --agent codex --agent claude-code --agent cursor
 ```
 
 Use `--scope project --project-root /absolute/path/to/project` on setup/install/doctor
@@ -215,13 +219,13 @@ from the gateway checkout:
 
 ```bash
 .venv/bin/python -m pip install -e '.[mcp]'
-.venv/bin/shared-memory setup --client opencode --project-root /absolute/path/to/your/project
+.venv/bin/contextrove setup --client opencode --project-root /absolute/path/to/your/project
 # or --client codex
 ```
 
 MCP is an alternative transport, not a prerequisite for the Skill workflow.
 
-Want a no-client self-check first? Run `.venv/bin/shared-memory demo`. It
+Want a no-client self-check first? Run `.venv/bin/contextrove demo`. It
 prints `before: pending`, `after: verified`, and
 `fresh_read: PASS` using disposable files. **This only checks the local core.**
 The previous [Codex → OpenCode model-session test](docs/VALIDATION.md#real-client-model-sessions-cross-client-correction-passed)
@@ -288,9 +292,9 @@ The Skill invokes the argument-based CLI. Every action requires an initialized
 workspace, uses the configured allowlist, and reads live files:
 
 ```bash
-shared-memory agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
-shared-memory agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
-shared-memory agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
+contextrove agent bootstrap --workspace "$HOME/.shared-memory-gateway" --project-root "$PWD"
+contextrove agent read --workspace "$HOME/.shared-memory-gateway" --note projects/current-project.md
+contextrove agent search --workspace "$HOME/.shared-memory-gateway" --query "decision" --project current-project
 ```
 
 The read/search examples use the first project's generated paths; for other
@@ -356,8 +360,12 @@ in the topic's replacement text when appropriate.
 
 ## Name and design
 
-The product name is under discussion; the published identifiers remain
-`shared-memory-gateway`. The [design review](docs/DESIGN_REVIEW.md) compares
+The product and Python distribution are named **ContextRove** (`contextrove`).
+The legacy `shared-memory` / `shared-memory-mcp` commands, Python module
+`shared_memory_gateway`, MCP server ID `shared-memory-gateway`, default workspace
+`~/.shared-memory-gateway` and Skill ID `shared-context` remain compatible.
+See the [migration guide](docs/MIGRATION.md) before upgrading an existing install.
+The [design review](docs/DESIGN_REVIEW.md) compares
 Basic Memory, MCP Memory Server, OpenLore, Mem0 and Letta by storage, update
 behavior, scope and client integration. This README also draws on the
 [Hindsight README](https://github.com/vectorize-io/hindsight#readme)'s separation

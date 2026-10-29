@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 810" role="img" aria-labelledby="title desc">
-  <title id="title">共享上下文架构</title>
-  <desc id="desc">Codex 与 OpenCode 加载共享上下文 Skill，由 Skill 指导 CLI 调用重复使用的本地核心；MCP 是可选适配器。所有入口共享个人与项目 Markdown、本机配置和锁目录；下方展示读取、预览差异与复核版本后应用的流程。</desc>
+  <title id="title">ContextRove 共享上下文架构</title>
+  <desc id="desc">本地 Coding Agent 通过各自 Skill 安装目录访问同一 ContextRove CLI 与文件核心；发现及模型执行分别验收，MCP 是可选适配器。所有入口共享个人与项目 Markdown、本机配置和锁目录；下方展示读取、预览差异与复核版本后应用的流程。</desc>
   <defs>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif; fill: #172b30; }
@@ -23,7 +23,7 @@
   <rect width="1440" height="810" fill="#f6f9f8"/>
   <rect width="1440" height="810" fill="url(#grid)" opacity=".35"/>
   <rect width="1440" height="8" fill="#08756e"/>
-  <text x="64" y="58" class="k">整体方案 / 本地优先</text>
+  <text x="64" y="58" class="k">ContextRove / 本地优先</text>
   <text x="64" y="105" class="h">一份规范知识，共享 Agent 工作流</text>
   <text x="64" y="136" class="sub">Skill 指导 CLI 操作；MCP 保留为可选适配器。</text>
 
@@ -33,14 +33,14 @@
 
   <rect x="64" y="210" width="308" height="122" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
   <rect x="64" y="210" width="7" height="122" fill="#127870"/>
-  <text x="88" y="249" class="label">OpenCode</text>
-  <text x="88" y="278" class="small">共享上下文 Skill</text>
+  <text x="88" y="249" class="label">本地 Coding Agent</text>
+  <text x="88" y="278" class="small">共享 Skill + 客户端安装目录</text>
   <text x="88" y="306" class="mono">CLI（主路径）</text>
 
   <rect x="64" y="347" width="308" height="122" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
   <rect x="64" y="347" width="7" height="122" fill="#d18a45"/>
-  <text x="88" y="386" class="label">Codex</text>
-  <text x="88" y="415" class="small">共享上下文 Skill</text>
+  <text x="88" y="386" class="label">客户端分别验收</text>
+  <text x="88" y="415" class="small">发现成功 ≠ 模型执行通过</text>
   <text x="88" y="443" class="mono">CLI（主路径）</text>
 
   <rect x="64" y="484" width="308" height="86" rx="6" fill="#ffffff" stroke="#c5d5d4" stroke-width="2"/>
