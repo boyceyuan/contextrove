@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .clients import CLIENTS, list_clients, skill_homes
 from .core import Memory, MemoryError
 
 METHODS = ("read", "search", "bootstrap", "propose_update", "apply_update", "forget")
@@ -221,18 +222,37 @@ def _skill_target(workspace: Path, skill_home: str | Path | None) -> tuple[Path,
     rendered = rendered.replace("{{SHARED_MEMORY}}", shlex.quote(str(command)))
     rendered = rendered.replace("{{WORKSPACE}}", shlex.quote(str(workspace)))
     skill_file = destination / "SKILL.md"
+    parent = destination.parent
+    while not parent.exists() and not parent.is_symlink():
+        parent = parent.parent
+    if not parent.is_dir():
+        raise MemoryError("SKILL_EXISTS", f"Skill parent is not a directory: {parent}")
     if destination.exists() or destination.is_symlink():
         if destination.is_symlink() or not skill_file.is_file() or skill_file.is_symlink():
             raise MemoryError("SKILL_EXISTS", f"Refusing to overwrite existing skill: {destination}")
-        if skill_file.read_text(encoding="utf-8") != rendered:
+        try:
+            existing = skill_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise MemoryError("SKILL_EXISTS", f"Existing skill is not UTF-8: {destination}") from exc
+        if existing != rendered:
             raise MemoryError("SKILL_EXISTS", f"A different skill already exists: {destination}")
     return skill_file, rendered
 
 
-def install_skill(workspace: str | Path, skill_home: str | Path | None = None) -> dict:
+def _skill_targets(workspace, skill_home, agents, scope, project_root):
+    targets = []
+    for identifier, home in skill_homes(agents, scope, project_root, skill_home):
+        skill_file, rendered = _skill_target(workspace, home)
+        targets.append((identifier, skill_file, rendered))
+    return targets
+
+
+def install_skill(workspace: str | Path, skill_home: str | Path | None = None, *,
+                  agents: list[str] | None = None, scope: str = "user",
+                  project_root: str | Path | None = None) -> dict:
     """Install the packaged portable skill for compatible local agent clients."""
     workspace_path = Path(workspace).expanduser().resolve()
-    skill_file, rendered = _skill_target(workspace_path, skill_home)
+    targets = _skill_targets(workspace_path, skill_home, agents, scope, project_root)
     config_path = workspace_path / "memory.local.json"
     try:
         memory = Memory(config_path)
@@ -240,15 +260,57 @@ def install_skill(workspace: str | Path, skill_home: str | Path | None = None) -
             memory.read(note)
     except (OSError, ValueError, KeyError, TypeError, MemoryError) as exc:
         raise MemoryError("WORKSPACE_MISMATCH", f"Not an initialized shared-memory workspace: {workspace_path}") from exc
-    reused = skill_file.exists()
-    if not reused:
-        skill_file.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(skill_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(rendered)
-    return {"status": "reused" if reused else "installed", "skill": str(skill_file),
+    installations = []
+    for identifier, skill_file, rendered in targets:
+        try:
+            # Recheck immediately before use; preflight alone may be stale.
+            _skill_target(workspace_path, skill_file.parent.parent)
+            reused = skill_file.exists()
+            if not reused:
+                skill_file.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(skill_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    stream.write(rendered)
+        except (MemoryError, OSError) as exc:
+            raise MemoryError("INSTALL_PARTIAL",
+                              f"Installation failed for {identifier}; earlier targets may exist. "
+                              f"Inspect skill doctor before retrying. Failed target: {skill_file}") from exc
+        installations.append({"agent": identifier, "skill": str(skill_file),
+                              "status": "reused" if reused else "installed",
+                              "validation": "File installed only; client discovery/execution not checked"})
+    return {"status": ("reused" if all(item["status"] == "reused" for item in installations)
+                       else "installed"), "skill": installations[0]["skill"],
+            "installations": installations, "scope": scope,
             "workspace": str(workspace_path), "config": str(config_path),
             "next": "Start a new compatible agent session and invoke shared-context"}
+
+
+def skill_doctor(workspace: str | Path, skill_home: str | Path | None = None, *,
+                 agents: list[str] | None = None, scope: str = "user",
+                 project_root: str | Path | None = None) -> dict:
+    """Inspect local prerequisites without starting clients or modifying their settings."""
+    workspace_path = Path(workspace).expanduser().resolve()
+    homes = skill_homes(agents, scope, project_root, skill_home)
+    try:
+        # Do not instantiate Memory here: its constructor creates a lock directory.
+        config_path = workspace_path / "memory.local.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        configured = isinstance(config, dict) and bool(config.get("notes"))
+    except (OSError, ValueError):
+        configured = False
+    reports = []
+    for identifier, home in homes:
+        path = home / "shared-context" / "SKILL.md"
+        try:
+            _skill_target(workspace_path, home)
+            status = "matches" if path.is_file() else "missing"
+        except (MemoryError, OSError) as exc:
+            status = exc.code if isinstance(exc, MemoryError) else "UNREADABLE"
+        reports.append({"agent": identifier, "skill": str(path), "file_status": status,
+                        "client_discovery": "unverified", "model_execution": "unverified"})
+    return {"workspace_config_present": configured, "workspace": str(workspace_path),
+            "installations": reports,
+            "scope": "Read-only local file check; not config validation or client execution"}
 
 
 def _add_project(target: Path, root: Path) -> None:
@@ -350,7 +412,8 @@ def _add_project(target: Path, root: Path) -> None:
 
 
 def setup_skill(directory: str | Path, project_root: str | Path,
-                skill_home: str | Path | None = None) -> dict:
+                skill_home: str | Path | None = None, *, agents: list[str] | None = None,
+                scope: str = "user") -> dict:
     """Create or safely reuse a matching workspace, then install the shared skill."""
     root = Path(project_root).expanduser().resolve()
     target = Path(directory).expanduser().absolute()
@@ -361,7 +424,7 @@ def setup_skill(directory: str | Path, project_root: str | Path,
         existing_parent = existing_parent.parent
     if target.is_symlink() or existing_parent.is_symlink():
         raise MemoryError("WORKSPACE_MISMATCH", f"Refusing symlink workspace: {target}")
-    _skill_target(target.resolve(), skill_home)
+    _skill_targets(target.resolve(), skill_home, agents, scope, root)
     existing = target.exists()
     if not target.exists():
         try:
@@ -385,7 +448,8 @@ def setup_skill(directory: str | Path, project_root: str | Path,
                 raise
             raise MemoryError("WORKSPACE_MISMATCH",
                               f"Existing workspace at {target} is not a valid shared-memory workspace") from exc
-    installed = install_skill(initialized["workspace"], skill_home)
+    installed = install_skill(initialized["workspace"], skill_home,
+                              agents=agents, scope=scope, project_root=root)
     memory = Memory(installed["config"])
     matched = memory.bootstrap(str(root))
     return {**initialized, **installed, "workspace_reused": existing,
@@ -448,10 +512,16 @@ def main():
     setup_parser.add_argument("--directory", default="~/.shared-memory-gateway")
     setup_parser.add_argument("--project-root", default=".")
     setup_parser.add_argument("--skill-home", help="Override the Skill source directory (Skill setup only)")
+    setup_parser.add_argument("--agent", action="append", choices=tuple(CLIENTS),
+                              help="Target a local Skill client; repeat for multiple clients")
+    setup_parser.add_argument("--scope", choices=("user", "project"), default="user")
     skill_parser = subparsers.add_parser("skill", help="Install the shared-context agent skill")
-    skill_parser.add_argument("install", choices=("install",))
+    skill_parser.add_argument("operation", choices=("install", "clients", "doctor"))
     skill_parser.add_argument("--workspace", default="~/.shared-memory-gateway")
     skill_parser.add_argument("--skill-home")
+    skill_parser.add_argument("--agent", action="append", choices=tuple(CLIENTS))
+    skill_parser.add_argument("--scope", choices=("user", "project"), default="user")
+    skill_parser.add_argument("--project-root")
     agent_parser = subparsers.add_parser("agent", help="Run a context action for agent skills")
     agent_parser.add_argument("action", choices=("bootstrap", "read", "search", "propose", "apply", "forget"))
     agent_parser.add_argument("--workspace", default="~/.shared-memory-gateway")
@@ -480,13 +550,25 @@ def main():
             return
         if args.method == "setup":
             if args.client == "skill":
-                result = setup_skill(args.directory, args.project_root, args.skill_home)
+                result = setup_skill(args.directory, args.project_root, args.skill_home,
+                                     agents=args.agent, scope=args.scope)
             else:
+                if args.agent or args.skill_home or args.scope != "user":
+                    raise MemoryError("INVALID_REQUEST", "Skill options require --client skill; "
+                                      "--client codex/opencode registers MCP")
                 result = setup(args.client, args.directory, args.project_root)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return
         if args.method == "skill":
-            output = install_skill(args.workspace, args.skill_home)
+            if args.operation == "clients":
+                print(json.dumps(list_clients(), ensure_ascii=False, indent=2))
+                return
+            options = dict(agents=args.agent, scope=args.scope, project_root=args.project_root)
+            if args.operation == "doctor":
+                print(json.dumps(skill_doctor(args.workspace, args.skill_home, **options),
+                                 ensure_ascii=False, indent=2))
+                return
+            output = install_skill(args.workspace, args.skill_home, **options)
             memory = Memory(output["config"])
             output.update(personal_note=str(memory.vault / "personal-context.md"),
                           project_notes=[str(memory.vault / note)
