@@ -129,6 +129,10 @@ cross-client behavior and [security](SECURITY.md) for filesystem limits.
 - Explicit project-root mapping; unmatched/ambiguous projects are not guessed.
 - Exact passage deletion, without keeping a second note history in service state.
 - Optional MCP SDK adapter with six tools.
+- Memory maintenance guidance: reuse current context, choose no-write/reuse/correct/new-topic
+  before editing, reconcile canonical topics and affected summaries, and keep consolidation bounded.
+- An optional [OpenCode on-demand assembly reference](integrations/opencode/README.md)
+  with synthetic tests; this is source in the checkout, not an automatically installed plugin.
 - Synthetic cross-agent model-session acceptance: OpenCode read `pending`; Codex
   read, previewed and applied `verified`; a fresh OpenCode session read `verified`
   through MCP (see [validation](docs/VALIDATION.md)).
@@ -239,11 +243,17 @@ For manual setup, existing workspaces, migration, and protocol checks, see
 The installed `shared-context` skill teaches compatible agents to:
 
 - call `bootstrap` at task start with the current project path, then explicitly
-  read matched project entries;
+  read the task-relevant entry rather than every matched note; reuse current rules
+  already available and recover missing context after compaction or project switches;
 - use literal search when a topic is unknown and read its source before relying on it;
 - preserve personal/project and evidence boundaries;
 - preview revision-bound edits and apply them under the caller's approval policy,
-  honoring standing authorization without repeatedly asking.
+  honoring standing authorization without repeatedly asking;
+- choose **no write / reuse / correct an existing topic / create a new topic**
+  before persisting; reconcile corrections in the canonical topic, check affected
+  summaries, and read back instead of appending contradictory claims;
+- consolidate one topic and necessary sources when requested, when sources conflict,
+  or when corrections recur—not by default through whole-vault scans or chat ingestion.
 
 The skill is a workflow prompt, not a sandbox, model tool, or guarantee that a
 client loads it. Its commands run through the local CLI. Verify actual skill
@@ -252,6 +262,26 @@ ran. Codex and OpenCode V2 documentation list the shared `~/.agents/skills`
 location. Client/version evidence and any discovery limitations are recorded in
 [validation](docs/VALIDATION.md#skill-first-validation-2026-10-28). Other agents
 may require a different installation path.
+
+### Optional OpenCode context assembly reference
+
+[`integrations/opencode/`](integrations/opencode/README.md) provides a configurable
+request-assembly module extracted from a local OpenCode V2 integration. It rereads
+approved core notes, avoids adding identical rules already in the request, returns
+missing rules in full, and supplies bounded candidate paths rather than project
+bodies. Read failures and omitted candidates are explicit; repeated injection
+replaces only its own block. The caller supplies approved paths and discovery.
+
+```sh
+node --test integrations/opencode/memory-context.test.mjs
+```
+
+The five synthetic Node tests cover assembly behavior, not model retrieval or real
+compaction recovery. The reference is not part of automatic Skill/MCP installation
+or the Python package, contains no personal configuration, and does not change the
+core's bootstrap or write guarantees. It does not implement semantic consolidation;
+the Skill still guides the agent's judgments. Existing installed Skills are not
+silently updated: preserve local edits and review/reinstall the template explicitly.
 
 ## From context to reusable working methods
 
