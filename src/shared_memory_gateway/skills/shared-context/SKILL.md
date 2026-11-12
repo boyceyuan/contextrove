@@ -23,8 +23,10 @@ run:
 
 If the result is `unmatched` or `ambiguous`, do not guess or load a different
 project's context. `bootstrap` returns global personal context in `context`, and
-matched project note paths in `entries`. Inspect the personal context, then read
-each returned project entry explicitly, replacing the placeholder below:
+matched project note paths in `entries`. Inspect the personal context (reuse it
+if already present and still current), then choose the entry relevant to the
+task. Entries are navigation, not an instruction to read every project note.
+Read the selected entry explicitly, replacing the placeholder below:
 
 ```sh
 {{SHARED_MEMORY}} agent read --workspace {{WORKSPACE}} --note '<entry from bootstrap>'
@@ -34,6 +36,10 @@ Treat the personal note as user-provided preferences and boundaries. Treat
 project notes as claims with their stated evidence and status, not automatically
 verified truth. Context can be stale; prefer newer direct user instructions and
 current repository evidence.
+
+After compaction or a project switch, bootstrap for the current directory again
+when the required context is absent or stale. Do not use a session-wide "already
+loaded" flag to skip recovery. Reuse identical current rules, not stale summaries.
 
 ## Search
 
@@ -53,6 +59,37 @@ Do not store secrets, credentials, speculative inferences, transient task state,
 or raw conversation transcripts. Keep personal preferences separate from project
 facts. Integrate a correction into the existing topic; avoid appending a second,
 contradictory status.
+
+Choose the maintenance action before writing: no durable delta means no write;
+an equivalent fact means reuse; a correction means replace the existing topic;
+only a genuinely new topic needs a new entry. Append-only memory tools are not a
+correction mechanism. If sources conflict, check their dates, environments, and
+evidence; the newest note is not automatically authoritative. Keep missing
+evidence explicit rather than guessing.
+
+For a correction, locate and read the canonical topic, reconcile the evidence,
+update its current conclusion, then check only the affected entry summaries for
+contradictions. Prefer links over copying the fact into multiple summaries.
+Preserve useful historical process with a time/status boundary. Report any
+inaccessible summary as unsynchronized; do not claim global consistency.
+
+Separate immediate correction from bounded consolidation. When the user asks
+for a review, sources conflict, or corrections recur, review one named topic and
+its necessary sources for duplication, staleness, missing relationships, and
+overgrown summaries. Do not scan the entire vault, ingest raw chats, or launch
+background work by default. Stop at the task budget and report concrete gaps.
+Evaluate with fresh-session retrieval of corrected facts and avoidance of stale
+claims, not note count. This workflow guides the model; the CLI does not perform
+semantic consolidation or verify truth.
+
+When requirements, implementation, or review work establishes evidence-backed
+understanding that changes how a project or system works (such as business rules,
+entity relationships, lifecycle, or billing semantics), update its canonical
+project/system note as well as the task or implementation note. Keep the canonical
+note focused on current understanding and its boundaries; keep task notes focused
+on rationale, alternatives, evidence, progress, and unresolved decisions, with
+links between them. Do not promote unverified or undecided proposals to system
+facts.
 
 Before editing, read the target and record its exact `revision`. Include a concise
 reason and source. Inspect the proposed diff and follow the user's existing
@@ -79,6 +116,9 @@ For complex multiline edits, use the JSON-on-stdin CLI described by
 with `--config <workspace>/memory.local.json`, passing the full proposal object
 to apply. Construct JSON and subprocess argument arrays with a script instead
 of interpolating note text into a shell command.
+
+After an update, read the canonical note back and confirm both the new conclusion
+and the removal or explicit historical scoping of the contradictory old claim.
 
 Delete only when the user explicitly asks to forget a fact. Read the current
 revision and exact passage first, then use `agent forget` with a reason and
